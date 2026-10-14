@@ -4,6 +4,8 @@
 export interface ChopIns {
   a: number | null;
   b: number | null;
+  /** The audio TOP's spectrum row, 0..1 per bin, low to high. */
+  spectrum: Float32Array;
 }
 
 export function cookChop(
@@ -22,6 +24,17 @@ export function cookChop(
   if (type === "pattern") {
     const phase = num.phase ?? 0;
     return Math.sin(Math.PI * 2 * phase) * amp;
+  }
+  if (type === "audioband") {
+    // Mean level of the spectrum between lo and hi (fractions of the bins), times gain.
+    const bins = inputs.spectrum.length;
+    const lo = Math.max(0, Math.min(1, Math.min(num.lo ?? 0, num.hi ?? 1)));
+    const hi = Math.max(0, Math.min(1, Math.max(num.lo ?? 0, num.hi ?? 1)));
+    const from = Math.min(bins - 1, Math.floor(lo * bins));
+    const to = Math.max(from + 1, Math.min(bins, Math.ceil(hi * bins)));
+    let sum = 0;
+    for (let i = from; i < to; i++) sum += inputs.spectrum[i] ?? 0;
+    return (sum / (to - from)) * (num.gain ?? 1);
   }
   if (type === "math") {
     const chopop = menu.chopop ?? "remap";

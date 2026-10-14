@@ -86,6 +86,12 @@ export const OPS: OpSpec[] = [
   },
   {
     family: "CHOP",
+    type: "audioband",
+    inputs: 0,
+    pars: [num("lo", 0, 0, 1), num("hi", 0.08, 0, 1), num("gain", 1, 0, 8)],
+  },
+  {
+    family: "CHOP",
     type: "math",
     inputs: 2,
     pars: [

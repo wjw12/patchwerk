@@ -52,6 +52,8 @@ export class Engine {
   private analyser: AnalyserNode | null = null;
   private freq = new Float32Array(512);
   private wave = new Float32Array(512);
+  /** The spectrum row of the audio texture as floats, for the audioband CHOP. */
+  private spectrum = new Float32Array(512);
   private pointer = { x: 0.5, y: 0.5, down: false, seen: false, clickX: 0, clickY: 0 };
   private roomCursors: Cursor[] = [];
   /** Fires on every local pointer change over the viewer; the room layer publishes it. */
@@ -656,7 +658,7 @@ export class Engine {
     if (node.data.bypass) sample = a ?? b ?? 0;
     else {
       try {
-        sample = cookChop(node.data.type, resolved.num, resolved.menu, { a, b }, this.time);
+        sample = cookChop(node.data.type, resolved.num, resolved.menu, { a, b, spectrum: this.spectrum }, this.time);
       } catch (err) {
         error = err instanceof Error ? err.message : "chop failed";
       }
@@ -1287,6 +1289,7 @@ export class Engine {
       for (let i = 0; i < 512; i++) {
         const spec = Math.min(1, Math.max(0, (this.freq[i]! + 90) / 80));
         const sample = this.wave[i]! * 0.5 + 0.5;
+        this.spectrum[i] = spec;
         writeTexel(pixels, i, spec);
         writeTexel(pixels, 512 + i, sample);
       }
@@ -1295,6 +1298,7 @@ export class Engine {
         const f = i / 512;
         const spec = Math.pow(Math.max(0, Math.sin(this.time * 2.2 + f * 18) * 0.5 + 0.5), 2) * Math.exp(-f * 1.6);
         const sample = Math.sin(f * 36 + this.time * 5) * 0.5 + 0.5;
+        this.spectrum[i] = spec;
         writeTexel(pixels, i, spec);
         writeTexel(pixels, 512 + i, sample);
       }
