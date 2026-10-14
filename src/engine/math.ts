@@ -40,16 +40,17 @@ export function lookAt(eye: readonly number[], target: readonly number[], up: re
   const yy = zz * xx - zx * xz;
   const yz = zx * xy - zy * xx;
   const out = new Float32Array(16);
+  // The camera axes are the rows of the rotation; column-major puts each row across columns.
   out[0] = xx;
-  out[1] = xy;
-  out[2] = xz;
+  out[1] = yx;
+  out[2] = zx;
   out[3] = 0;
-  out[4] = yx;
+  out[4] = xy;
   out[5] = yy;
-  out[6] = yz;
+  out[6] = zy;
   out[7] = 0;
-  out[8] = zx;
-  out[9] = zy;
+  out[8] = xz;
+  out[9] = yz;
   out[10] = zz;
   out[11] = 0;
   out[12] = -(xx * (eye[0] ?? 0) + xy * (eye[1] ?? 0) + xz * (eye[2] ?? 0));
