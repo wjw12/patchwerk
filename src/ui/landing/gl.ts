@@ -2,7 +2,7 @@
 // ShaderToy previews. Same wrapper as the engine, none of the graph machinery.
 import * as twgl from "twgl.js";
 import { FULLSCREEN_VS } from "../../engine/fullscreen";
-import { wrapShader } from "../../engine/wrap";
+import { parseShader, wrapShader } from "../../engine/wrap";
 import hydraO1 from "../../ops/hydra-o1.glsl?raw";
 import hydraO5 from "../../ops/hydra-o5.glsl?raw";
 import hydraPost from "../../ops/hydra-post.glsl?raw";
@@ -206,6 +206,9 @@ export function hydraHero(canvas: HTMLCanvasElement, options: HeroOptions): () =
     o5: program(gl, wrapShader(hydraO5).source),
     post: program(gl, wrapShader(hydraPost).source),
   };
+  const defaults = (source: string) =>
+    Object.fromEntries(parseShader(source).params.flatMap((param) => (param.kind === "menu" ? [] : [[param.name, param.value]])));
+  const pars = { o1: defaults(hydraO1), o5: defaults(hydraO5), post: defaults(hydraPost) };
   const grade = program(gl, GRADE_FS);
   const win = program(gl, WINDOW_FS);
   const { pointer, off } = pointerOn(canvas);
@@ -254,8 +257,9 @@ export function hydraHero(canvas: HTMLCanvasElement, options: HeroOptions): () =
 
     gl.disable(gl.BLEND);
     gl.disable(gl.SCISSOR_TEST);
-    pass(stages.o1, o1, { iResolution: res, iTime: time, iFrame: frame, iChannel3: sampling(gl, tex(o1Prev), "nearest") });
+    pass(stages.o1, o1, { ...pars.o1, iResolution: res, iTime: time, iFrame: frame, iChannel3: sampling(gl, tex(o1Prev), "nearest") });
     pass(stages.o5, o5, {
+      ...pars.o5,
       iResolution: res,
       iTime: time,
       iFrame: frame,
@@ -263,6 +267,7 @@ export function hydraHero(canvas: HTMLCanvasElement, options: HeroOptions): () =
       iChannel3: sampling(gl, tex(o5Prev), "nearest"),
     });
     pass(stages.post, targets.post, {
+      ...pars.post,
       iResolution: res,
       iTime: time,
       iFrame: frame,

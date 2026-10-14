@@ -1,6 +1,18 @@
 // @feedback
 // Hydra o1: layers o4, o6, o0 inlined, then one odd-even row swap of the previous frame.
-// iChannel3 is last frame, nearest. time is already speed-scaled (0.025).
+// iChannel3 is last frame, nearest.
+uniform float uSpeed; // @range 0 4 default 1 label "Speed"
+uniform float uZoom; // @range 0.2 3 default 1 label "Zoom"
+uniform float uStripes; // @range 0.1 4 default 1 label "Stripe density"
+uniform float uAngle; // @range 0 3.1416 default 1.57 label "Stripe angle"
+uniform float uTwist; // @range 0 4 default 1 label "Twist"
+uniform float uWarp; // @range 0 1 default 0.1 label "Warp"
+uniform float uPixels; // @range 0.02 1 default 1 label "Resolution"
+uniform float uBlocks; // @range -3 1 default -1.304 label "Blocks"
+uniform float uBands; // @range 1 60 default 20 label "Contour bands"
+uniform float uFresh; // @range 0.5 1.3 default 1.032 label "Fresh frame"
+uniform float uSort; // @range 0 1 default 0.495 label "Sort threshold"
+uniform float uContrast; // @range 0.5 2 default 1.237 label "Contrast"
 
 vec4 permute(vec4 x) { return mod(((x * 34.0) + 1.0) * x, 289.0); }
 vec4 taylorInvSqrt(vec4 r) { return 1.79284291400159 - 0.85373472095314 * r; }
@@ -45,7 +57,7 @@ float hydraNoise(vec3 v) {
   return 42.0 * dot(m * m, vec4(dot(p0, x0), dot(p1, x1), dot(p2, x2), dot(p3, x3)));
 }
 
-const float HYDRA_SPEED = 0.025;
+float hydraTime() { return iTime * 0.025 * uSpeed; }
 
 vec2 hydraSpin(vec2 st, float ang) {
   vec2 xy = st - vec2(0.5);
@@ -56,7 +68,7 @@ vec2 hydraSpin(vec2 st, float ang) {
 }
 
 vec2 hydraRotate(vec2 st, float angle, float speed) {
-  return hydraSpin(st, angle + speed * iTime * HYDRA_SPEED);
+  return hydraSpin(st, angle + speed * hydraTime());
 }
 
 vec2 hydraScale(vec2 st, float amount, float xMult, float yMult) {
@@ -79,7 +91,7 @@ vec2 hydraModulateRotate(vec2 st, vec4 c, float multiple) {
 }
 
 vec4 hydraOsc(vec2 st, float frequency, float sync, float offset) {
-  float t = iTime * HYDRA_SPEED * sync;
+  float t = hydraTime() * sync;
   float r = sin((st.x - offset / frequency + t) * frequency) * 0.5 + 0.5;
   float g = sin((st.x + t) * frequency) * 0.5 + 0.5;
   float b = sin((st.x + offset / frequency + t) * frequency) * 0.5 + 0.5;
@@ -87,30 +99,30 @@ vec4 hydraOsc(vec2 st, float frequency, float sync, float offset) {
 }
 
 vec4 hydraNoiseTex(vec2 st, float scale, float offset) {
-  float n = hydraNoise(vec3(st * scale, offset * iTime * HYDRA_SPEED));
+  float n = hydraNoise(vec3(st * scale, offset * hydraTime()));
   return vec4(n, n, n, 1.0);
 }
 
 vec4 layerO4(vec2 screen) {
-  vec2 st = hydraPixelate(screen, 428.0, 621.0);
-  st = hydraScale(st, 4.77, 1.0, 1.0);
-  st = hydraModulateRotate(st, hydraNoiseTex(hydraRotate(st, 814.0, 0.841183), 12.0, 1.5), 0.5);
-  st = hydraModulate(st, hydraNoiseTex(hydraPixelate(hydraRotate(st, 814.0, 1.05), 46.0, 16.0), 12.0, 0.1), 0.1);
-  st = hydraRotate(st, 1.57, 2.0);
-  return hydraOsc(st, 30.0, 0.1, 0.0);
+  vec2 st = hydraPixelate(screen, 428.0 * uPixels, 621.0 * uPixels);
+  st = hydraScale(st, 4.77 * uZoom, 1.0, 1.0);
+  st = hydraModulateRotate(st, hydraNoiseTex(hydraRotate(st, 814.0, 0.841183), 12.0, 1.5), 0.5 * uTwist);
+  st = hydraModulate(st, hydraNoiseTex(hydraPixelate(hydraRotate(st, 814.0, 1.05), 46.0, 16.0), 12.0, 0.1), uWarp);
+  st = hydraRotate(st, uAngle, 2.0);
+  return hydraOsc(st, 30.0 * uStripes, 0.1, 0.0);
 }
 
 vec4 layerO6(vec2 screen) {
-  vec2 st = hydraPixelate(screen, 573.0, 5403.0);
-  st = hydraScale(st, 9.1, 1.0, 1.0);
-  st = hydraModulateRotate(st, hydraNoiseTex(hydraRotate(st, 815.0, 0.75), 2.8, 0.7), 1.560524);
-  st = hydraModulate(st, hydraNoiseTex(hydraPixelate(hydraRotate(st, 815.0, 10.75), 46.0, 1.0), 3.6, 0.5), 0.1);
-  st = hydraRotate(st, 1.57, 1.96);
-  return hydraOsc(st, 56.0, 0.8, 0.0);
+  vec2 st = hydraPixelate(screen, 573.0 * uPixels, 5403.0 * uPixels);
+  st = hydraScale(st, 9.1 * uZoom, 1.0, 1.0);
+  st = hydraModulateRotate(st, hydraNoiseTex(hydraRotate(st, 815.0, 0.75), 2.8, 0.7), 1.560524 * uTwist);
+  st = hydraModulate(st, hydraNoiseTex(hydraPixelate(hydraRotate(st, 815.0, 10.75), 46.0, 1.0), 3.6, 0.5), uWarp);
+  st = hydraRotate(st, uAngle, 1.96);
+  return hydraOsc(st, 56.0 * uStripes, 0.8, 0.0);
 }
 
 vec4 unoise(vec2 st) {
-  float n = 0.5 + 0.5 * hydraNoise(vec3(st * 5.2, 0.1 * iTime * HYDRA_SPEED));
+  float n = 0.5 + 0.5 * hydraNoise(vec3(st * 5.2, 0.1 * hydraTime()));
   return vec4(n, n, n, 1.0);
 }
 
@@ -123,7 +135,7 @@ vec4 layerO0(vec2 screen) {
   c = min(c, unoise(hydraPixelate(screen, 8.0, 8.0)));
   c = min(c, unoise(hydraPixelate(screen, 4.0, 4.0)));
   c = min(c, unoise(hydraPixelate(screen, 2.0, 2.0)));
-  c *= 20.0;
+  c *= uBands;
   return mod(c, vec4(1.001));
 }
 
@@ -142,10 +154,10 @@ vec4 pysort(vec2 frag, vec2 res) {
   float gCurr = (curr.r + curr.g + curr.b) / 3.0;
   float gComp = (comp.r + comp.g + comp.b) / 3.0;
   if (dir.y < 0.0) {
-    if (gCurr > 0.495 && gComp > gCurr) return comp;
+    if (gCurr > uSort && gComp > gCurr) return comp;
     return curr;
   }
-  if (gComp > 0.495 && gCurr >= gComp) return comp;
+  if (gComp > uSort && gCurr >= gComp) return comp;
   return curr;
 }
 
@@ -154,8 +166,8 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
   vec4 o4 = layerO4(screen);
   vec4 o6 = layerO6(screen);
   vec4 o0 = layerO0(screen);
-  vec4 mid = hydraBlend(hydraBlend(o4, o6, 1.239), o0, -1.304);
+  vec4 mid = hydraBlend(hydraBlend(o4, o6, 1.239), o0, uBlocks);
   vec4 sorted = pysort(fragCoord, iResolution.xy);
-  vec4 blended = hydraBlend(sorted, mid, 1.032);
-  fragColor = vec4((blended.rgb - 0.5) * 1.237 + 0.5, blended.a);
+  vec4 blended = hydraBlend(sorted, mid, uFresh);
+  fragColor = vec4((blended.rgb - 0.5) * uContrast + 0.5, blended.a);
 }
