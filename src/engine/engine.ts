@@ -54,7 +54,7 @@ export class Engine {
   private wave = new Float32Array(512);
   /** The spectrum row of the audio texture as floats, for the audioband CHOP. */
   private spectrum = new Float32Array(512);
-  private pointer = { x: 0.5, y: 0.5, down: false, seen: false, clickX: 0, clickY: 0 };
+  private pointer = { x: 0.5, y: 0.5, down: false, seen: false, clickX: 0, clickY: 0, dragX: 0, dragY: 0, clicked: false, ever: false };
   private roomCursors: Cursor[] = [];
   /** Fires on every local pointer change over the viewer; the room layer publishes it. */
   onPointer: ((cursor: Cursor) => void) | null = null;
@@ -236,6 +236,7 @@ export class Engine {
     const end = this.launch.t;
     this.dt = 1 / 60;
     this.pointer.seen = false;
+    this.pointer.ever = false;
     this.clearCookTargets();
     for (let i = 1; i <= frames; i++) {
       if (generation !== this.generation) return;
@@ -377,6 +378,8 @@ export class Engine {
       this.track(canvas, event);
       this.pointer.clickX = this.pointer.x;
       this.pointer.clickY = this.pointer.y;
+      this.pointer.clicked = true;
+      this.pointer.ever = true;
       this.emitPointer();
     });
     canvas.addEventListener("pointerup", () => {
@@ -504,6 +507,7 @@ export class Engine {
     if (nodes !== this.prunedFor) this.prune(nodes);
     this.fillAudio();
     this.cookOps(nodes, edges);
+    this.pointer.clicked = false;
     if (this.present) this.presentAll(nodes);
     const hud = document.getElementById("hud");
     if (hud) {
@@ -997,12 +1001,7 @@ export class Engine {
       iDate: this.date(),
       iSampleRate: this.analyser?.context.sampleRate ?? 44100,
       iChannelTime: [this.time, this.time, this.time, this.time],
-      iMouse: [
-        this.pointer.x * COOK_W,
-        this.pointer.y * COOK_H,
-        (this.pointer.down ? 1 : -1) * Math.max(this.pointer.clickX, 0.0001) * COOK_W,
-        this.pointer.clickY * COOK_H,
-      ],
+      iMouse: this.mouse(),
       iCursorCount: (this.pointer.seen ? 1 : 0) + this.roomCursors.length,
       iCursors: cursorArray(this.pointer.seen ? [this.pointer, ...this.roomCursors] : this.roomCursors),
     };
@@ -1385,7 +1384,22 @@ export class Engine {
     this.pointer.x = clamp01((event.clientX - rect.left) / Math.max(rect.width, 1));
     this.pointer.y = clamp01(1 - (event.clientY - rect.top) / Math.max(rect.height, 1));
     this.pointer.seen = true;
+    if (this.pointer.down) {
+      this.pointer.dragX = this.pointer.x;
+      this.pointer.dragY = this.pointer.y;
+    }
     this.emitPointer();
+  }
+
+  /**
+   * ShaderToy iMouse: xy = last position while the button was down, |zw| = where it went down,
+   * z > 0 while held, w > 0 only on the click frame. All zero until the first click.
+   * Hover without a button only reaches iCursors.
+   */
+  private mouse(): number[] {
+    const p = this.pointer;
+    if (!p.ever) return [0, 0, 0, 0];
+    return [p.dragX * COOK_W, p.dragY * COOK_H, (p.down ? 1 : -1) * p.clickX * COOK_W, (p.clicked ? 1 : -1) * p.clickY * COOK_H];
   }
 
   private emitPointer(): void {
