@@ -295,11 +295,21 @@ export const useGraph = create<GraphState>((set, get) => ({
   addOp: (family, type, position) => {
     const at = position ?? { x: 120 + Math.random() * 180, y: 80 + Math.random() * 140 };
     const id = `${type.slice(0, 4)}${crypto.randomUUID().slice(0, 4)}`;
-    const node = makeNode(id, uniqueLabel(`${type}1`, get().nodes), family, type, at);
+    const { nodes, edges } = get();
+    const node = makeNode(id, uniqueLabel(`${type}1`, nodes), family, type, at);
+    const picked = nodes.filter((item) => item.selected);
+    const after = picked.length === 1 ? picked[0] : undefined;
+    if (node.data.kind === "op") node.data = { ...node.data, pars: guessRefs(node.data.pars, nodes, edges, after) };
+    // Placed while one op of the same family is selected: wire it after that op, like TouchDesigner.
+    const inlet = nodeInlets(node.data)[0];
+    const wire = after && inlet && after.data.family === family && nodeOutlet(after.data);
     set((state) => ({
       palette: null,
       editorOpen: type === "shader" ? true : state.editorOpen,
       nodes: [...state.nodes.map((item) => ({ ...item, selected: false })), node],
+      edges: wire
+        ? addEdge({ source: after.id, sourceHandle: "out", target: id, targetHandle: inlet, style: wireStyle(family) }, state.edges)
+        : state.edges,
     }));
   },
   save: () => {
@@ -338,6 +348,27 @@ function applyOne(par: Par, name: string, patch: ParOverride & { text?: string; 
   if (typeof patch.value === "number" && Number.isFinite(patch.value)) next.value = patch.value;
   if (typeof patch.expr === "string") next.expr = patch.expr;
   return next;
+}
+
+/**
+ * Fills a new op's empty op-name fields (geo's pop/mat/cam, render's geo): the selected op if it
+ * fits, else the only candidate, else the one that ends a chain, else the newest.
+ */
+function guessRefs(pars: Par[], nodes: PNode[], edges: Edge[], selected: PNode | undefined): Par[] {
+  return pars.map((par) => {
+    if (par.kind !== "text" || !par.ref || par.value) return par;
+    const want = par.ref;
+    const fits = (node: PNode) =>
+      node.data.family === want.family && (!want.type || (node.data.kind === "op" && node.data.type === want.type));
+    const candidates = nodes.filter(fits);
+    const ends = candidates.filter((node) => !edges.some((edge) => edge.source === node.id));
+    const pick =
+      (selected && fits(selected) ? selected : undefined) ??
+      (candidates.length === 1 ? candidates[0] : undefined) ??
+      (ends.length === 1 ? ends[0] : undefined) ??
+      candidates.at(-1);
+    return pick ? { ...par, value: pick.data.label } : par;
+  });
 }
 
 /** Labels are how op('name') and geo/render find a node, so no two nodes share one: noise1, noise2. */
