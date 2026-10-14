@@ -7,6 +7,7 @@ uniform float uShadowLevel; // @range 0 0.6 default 0.11 label "Shadow level"
 uniform float uLightLevel; // @range 0.2 1 default 0.8 label "Highlight level"
 uniform float uSoft; // @range 0.001 0.3 default 0.04 label "Edge softness"
 uniform float uDotLevel; // @range 0 1 default 0.407 label "Dot threshold"
+uniform float uDotMix; // @range 0 1 default 1 label "Dot opacity"
 uniform float uDotSize; // @range 1 8 default 1 label "Dot size"
 uniform float uDotShift; // @range 0 1 default 0.9685 label "Dot shift"
 uniform float uZoom; // @range 0.5 2 default 1.02 label "Zoom"
@@ -146,5 +147,5 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
   float speckleA = smoothstep(0.4999999, 0.7000001, luma(speckle.rgb));
   base.rgb += poster.rgb + speckle.rgb * speckleA * high.rgb;
   vec4 dots = greenPixels(fragCoord);
-  fragColor = vec4(dots.rgb + base.rgb * (1.0 - dots.a), 1.0);
+  fragColor = vec4(dots.rgb * uDotMix + base.rgb * (1.0 - dots.a * uDotMix), 1.0);
 }
