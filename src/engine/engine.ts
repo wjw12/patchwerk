@@ -14,7 +14,7 @@ import { useGraph } from "../store";
 import type { PNode } from "../store";
 import { FULLSCREEN_VS } from "./fullscreen";
 import { COPY_FS, PASSTHROUGH } from "./sources";
-import { compilerErrors, parseShader, shaderNumberPar, wrapShader, type ParsedShader, type ShaderParam } from "./wrap";
+import { channelSampling, compilerErrors, parseShader, shaderNumberPar, wrapShader, type ParsedShader, type ShaderParam } from "./wrap";
 const GPU_TIMEOUT = "GPU timeout / context lost. Running the last good version; edit the shader to try again.";
 /** How long after a commit a context loss is still blamed on it. */
 const SUSPECT_MS = 10_000;
@@ -98,6 +98,10 @@ export class Engine {
   private cookSerial = 0;
   private prevWanted = new Set<string>();
   private parsed = new Map<string, ParsedShader>();
+  /** Per-input samplers by "filter/wrap"; RGBA32F targets; the cook each texture was last mipped in. */
+  private samplers = new Map<string, WebGLSampler>();
+  private fullTextures = new WeakSet<WebGLTexture>();
+  private mipped = new WeakMap<WebGLTexture, number>();
   /** The newest commit, until it has run long enough to be trusted. */
   private suspect: { id: string; source: string; good: string | null; at: number } | null = null;
   /** Hashes of shader sources that lost the context. Survives restore and stop(). */
@@ -150,6 +154,7 @@ export class Engine {
         this.runtime.clear();
         this.drafts.clear();
         this.images.clear();
+        this.samplers.clear();
         try {
           // Extensions are per context; a restored context starts without them.
           if (!gl.getExtension("EXT_color_buffer_float")) throw new Error("EXT_color_buffer_float is missing after restore");
@@ -222,6 +227,7 @@ export class Engine {
     this.programs.clear();
     this.runtime.clear();
     this.drafts.clear();
+    this.samplers.clear();
     this.copy = null;
     this.tri = null;
     this.pops = null;
@@ -1102,7 +1108,8 @@ export class Engine {
           }
         }
       }
-      values[`iChannel${channel}`] = tex;
+      const sampling = channelSampling(node.data.kind === "shader" ? node.data.params : params, channel);
+      values[`iChannel${channel}`] = tex && tex !== this.black ? this.sampled(tex, sampling) : tex;
       resolutions[channel * 3] = w;
       resolutions[channel * 3 + 1] = h;
       resolutions[channel * 3 + 2] = 1;
@@ -1112,7 +1119,8 @@ export class Engine {
     const floats = live.filter((param) => param.kind === "float").map(shaderNumberPar);
     const cooked = resolvePars(node.id, floats, this.exprEnv(nodes)).num;
     for (const param of live) {
-      values[param.name] = param.kind === "float" ? (cooked[param.name] ?? param.value) : param.value;
+      if (param.kind === "float") values[param.name] = cooked[param.name] ?? param.value;
+      else if (param.kind === "color") values[param.name] = param.value;
     }
     return values;
   }
@@ -1200,6 +1208,40 @@ export class Engine {
     twgl.setBuffersAndAttributes(gl, info, this.tri);
     this.setKnownUniforms(info, values);
     twgl.drawBufferInfo(gl, this.tri);
+    // Samplers override texture state per unit; leave no unit bound for the next pass.
+    for (let unit = 0; unit < 4; unit++) gl.bindSampler(unit, null);
+  }
+
+  /**
+   * A texture with the input's filter and wrap. linear/clamp is the texture's own state and
+   * binds no sampler. mipmap regenerates the chain once per cook. RGBA32F without
+   * OES_texture_float_linear can neither filter nor mip, so it samples nearest.
+   */
+  private sampled(tex: WebGLTexture, sampling: { filter: string; wrap: string }): WebGLTexture | { texture: WebGLTexture; sampler: WebGLSampler } {
+    const gl = this.gl;
+    if (!gl || (sampling.filter === "linear" && sampling.wrap === "clamp")) return tex;
+    const filterable = this.floatLinear || !this.fullTextures.has(tex);
+    let filter = filterable ? sampling.filter : "nearest";
+    if (filter === "mipmap" && this.mipped.get(tex) !== this.cookSerial) {
+      gl.bindTexture(gl.TEXTURE_2D, tex);
+      gl.getError();
+      gl.generateMipmap(gl.TEXTURE_2D);
+      if (gl.getError() === gl.NO_ERROR) this.mipped.set(tex, this.cookSerial);
+      else filter = "linear";
+    }
+    const key = `${filter}/${sampling.wrap}`;
+    let sampler = this.samplers.get(key);
+    if (!sampler) {
+      sampler = gl.createSampler();
+      const wrap = sampling.wrap === "repeat" ? gl.REPEAT : sampling.wrap === "mirror" ? gl.MIRRORED_REPEAT : gl.CLAMP_TO_EDGE;
+      const min = filter === "mipmap" ? gl.LINEAR_MIPMAP_LINEAR : filter === "nearest" ? gl.NEAREST : gl.LINEAR;
+      gl.samplerParameteri(sampler, gl.TEXTURE_MIN_FILTER, min);
+      gl.samplerParameteri(sampler, gl.TEXTURE_MAG_FILTER, filter === "nearest" ? gl.NEAREST : gl.LINEAR);
+      gl.samplerParameteri(sampler, gl.TEXTURE_WRAP_S, wrap);
+      gl.samplerParameteri(sampler, gl.TEXTURE_WRAP_T, wrap);
+      this.samplers.set(key, sampler);
+    }
+    return { texture: tex, sampler };
   }
 
   private testOutput(info: twgl.ProgramInfo, params: ShaderParam[]): string | null {
@@ -1378,10 +1420,12 @@ export class Engine {
       wrap: gl.CLAMP_TO_EDGE,
     };
     const fbi = twgl.createFramebufferInfo(gl, [attach], w, h);
+    if (full) this.fullTextures.add(fbi.attachments[0] as WebGLTexture);
     twgl.bindFramebufferInfo(gl, fbi);
     if (gl.checkFramebufferStatus(gl.FRAMEBUFFER) !== gl.FRAMEBUFFER_COMPLETE) {
       freeTarget(gl, fbi);
       const nearest = twgl.createFramebufferInfo(gl, [{ ...attach, min: gl.NEAREST, mag: gl.NEAREST }], w, h);
+      if (full) this.fullTextures.add(nearest.attachments[0] as WebGLTexture);
       this.clearTarget(nearest);
       if (gl.checkFramebufferStatus(gl.FRAMEBUFFER) !== gl.FRAMEBUFFER_COMPLETE) {
         throw new Error("float framebuffer is incomplete");

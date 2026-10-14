@@ -106,6 +106,7 @@ function applyOverrides(params: ShaderParam[], overrides: GraphNode["params"]): 
       return patchShaderParam(param, next);
     }
     if (param.kind === "color" && typeof next === "string") return { ...param, value: hexRgb(next) };
+    if (param.kind === "menu" && typeof next === "string") return patchShaderParam(param, { menu: next });
     if (param.kind === "color" && Array.isArray(next) && next.length === 3) {
       return { ...param, value: [Number(next[0]), Number(next[1]), Number(next[2])] };
     }

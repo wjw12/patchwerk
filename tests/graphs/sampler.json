@@ -1,0 +1,21 @@
+{
+  "viewer": "out",
+  "nodes": [
+    { "id": "rings", "kind": "shader", "label": "rings", "shader": "comp-rings.glsl", "x": 40, "y": 80 },
+    {
+      "id": "split",
+      "kind": "shader",
+      "label": "split",
+      "source": "// Left: iChannel0 as mipmap + mirror, read at LOD 6 and scaled past the edge.\n// Right: iChannel1 as nearest + repeat, tiled three times.\nvoid mainImage(out vec4 fragColor, in vec2 fragCoord) {\n  vec2 uv = fragCoord / iResolution.xy;\n  vec3 left = textureLod(iChannel0, (uv - 0.25) * 2.4, 6.0).rgb;\n  vec3 right = texture(iChannel1, uv * 3.0).rgb;\n  fragColor = vec4(uv.x < 0.5 ? left : right, 1.0);\n}\n",
+      "x": 340,
+      "y": 80,
+      "params": { "iChannel0.filter": "mipmap", "iChannel0.wrap": "mirror", "iChannel1.filter": "nearest", "iChannel1.wrap": "repeat" }
+    },
+    { "id": "out", "kind": "out", "label": "out", "x": 640, "y": 80 }
+  ],
+  "edges": [
+    { "source": "rings", "target": "split", "targetHandle": "ch0" },
+    { "source": "rings", "target": "split", "targetHandle": "ch1" },
+    { "source": "split", "target": "out", "targetHandle": "ch0" }
+  ]
+}

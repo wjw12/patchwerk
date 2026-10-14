@@ -56,6 +56,8 @@ function ShaderControls({ id, data }: { id: string; data: ShaderData }) {
       {data.params.map((param) =>
         param.kind === "float" ? (
           <ParRow key={param.name} id={id} par={shaderNumberPar(param)} label={param.label} set={set} />
+        ) : param.kind === "menu" ? (
+          <ParRow key={param.name} id={id} par={{ kind: "menu", name: param.name, value: param.value, options: param.options }} label={param.label} set={set} />
         ) : (
           <ColorRow key={param.name} label={param.label} value={param.value} onChange={(rgb) => setParam(id, param.name, rgb)} />
         ),

@@ -154,6 +154,7 @@ export function mergeParams(prev: ShaderParam[], next: ShaderParam[]): ShaderPar
     if (!old) return param;
     if (param.kind === "float" && old.kind === "float") return { ...param, value: old.value, mode: old.mode, expr: old.expr };
     if (param.kind === "color" && old.kind === "color") return { ...param, value: old.value };
+    if (param.kind === "menu" && old.kind === "menu") return { ...param, value: old.value };
     return param;
   });
 }

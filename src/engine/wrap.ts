@@ -19,10 +19,31 @@ export interface ColorParam {
   label: string;
 }
 
-export type ShaderParam = FloatParam | ColorParam;
+/** How one input is sampled, ShaderToy style: `iChannel0.filter`, `iChannel0.wrap`. Not a uniform. */
+export interface MenuParam {
+  kind: "menu";
+  name: string;
+  value: string;
+  options: string[];
+  label: string;
+}
 
-/** What a parameter row writes: a number, a color, or an op-style { mode, value, expr } patch. */
-export type ShaderParamPatch = number | [number, number, number] | { mode?: ParMode; value?: number; expr?: string };
+export type ShaderParam = FloatParam | ColorParam | MenuParam;
+
+export const FILTERS = ["linear", "nearest", "mipmap"];
+export const WRAPS = ["clamp", "repeat", "mirror"];
+
+/** The filter and wrap a shader asked for on an input. linear/clamp is how every TOP is stored. */
+export function channelSampling(params: ShaderParam[], channel: number): { filter: string; wrap: string } {
+  const pick = (name: string, fallback: string) => {
+    const param = params.find((item) => item.name === `iChannel${channel}.${name}`);
+    return param?.kind === "menu" ? param.value : fallback;
+  };
+  return { filter: pick("filter", "linear"), wrap: pick("wrap", "clamp") };
+}
+
+/** What a parameter row writes: a number, a color, an op-style { mode, value, expr } patch, or a menu pick. */
+export type ShaderParamPatch = number | [number, number, number] | { mode?: ParMode; value?: number; expr?: string; menu?: string };
 
 /** A float uniform seen as an op number par, so it shares the par row and resolvePars. */
 export function shaderNumberPar(param: FloatParam): NumberPar {
@@ -39,6 +60,10 @@ export function shaderNumberPar(param: FloatParam): NumberPar {
 
 export function patchShaderParam(param: ShaderParam, patch: ShaderParamPatch): ShaderParam {
   if (param.kind === "color") return Array.isArray(patch) ? { ...param, value: patch } : param;
+  if (param.kind === "menu") {
+    const pick = typeof patch === "object" && !Array.isArray(patch) ? patch.menu : undefined;
+    return pick && param.options.includes(pick) ? { ...param, value: pick } : param;
+  }
   if (Array.isArray(patch)) return param;
   if (typeof patch === "number") return Number.isFinite(patch) ? { ...param, mode: "constant", value: patch } : param;
   const next = { ...param };
@@ -54,12 +79,17 @@ export function patchShaderParam(param: ShaderParam, patch: ShaderParamPatch): S
  */
 export function encodeShaderParam(param: ShaderParam): number | [number, number, number] | string {
   if (param.kind === "color") return param.value;
+  if (param.kind === "menu") return `m:${param.value}`;
   if (!param.expr && param.mode !== "expression") return param.value;
   return `n:${param.mode ?? "constant"}:${param.value}:${encodeURIComponent(param.expr ?? "")}`;
 }
 
 export function decodeShaderParam(param: ShaderParam, raw: unknown): ShaderParam {
   if (param.kind === "color") return Array.isArray(raw) && raw.length === 3 ? { ...param, value: [Number(raw[0]), Number(raw[1]), Number(raw[2])] } : param;
+  if (param.kind === "menu") {
+    const value = typeof raw === "string" && raw.startsWith("m:") ? raw.slice(2) : "";
+    return param.options.includes(value) ? { ...param, value } : param;
+  }
   if (typeof raw === "number") return { ...param, value: raw, mode: "constant", expr: "" };
   if (typeof raw !== "string" || !raw.startsWith("n:")) return param;
   const [mode, value, ...expr] = raw.slice(2).split(":");
@@ -176,6 +206,12 @@ export function parseShader(source: string): ParsedShader {
         value: [parseInt(hex.slice(0, 2), 16) / 255, parseInt(hex.slice(2, 4), 16) / 255, parseInt(hex.slice(4, 6), 16) / 255],
       });
     }
+  }
+
+  const sampled = new Set([...channels, ...prev.map((item) => item.channel), ...(feedback ? [3] : [])]);
+  for (const channel of [...sampled].sort()) {
+    params.push({ kind: "menu", name: `iChannel${channel}.filter`, label: `iChannel${channel} filter`, value: "linear", options: FILTERS });
+    params.push({ kind: "menu", name: `iChannel${channel}.wrap`, label: `iChannel${channel} wrap`, value: "clamp", options: WRAPS });
   }
 
   return {
