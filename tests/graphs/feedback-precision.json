@@ -1,0 +1,8 @@
+{
+  "viewer": "out",
+  "nodes": [
+    { "id": "accum", "kind": "shader", "label": "accum", "shader": "feedback-accum.glsl", "x": 40, "y": 80 },
+    { "id": "out", "kind": "out", "label": "out", "x": 360, "y": 80 }
+  ],
+  "edges": [{ "source": "accum", "target": "out", "targetHandle": "ch0" }]
+}

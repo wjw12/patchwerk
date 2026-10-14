@@ -88,6 +88,7 @@ export class Engine {
   private settleRaf = 0;
   private settleCook = false;
   private settledSeen: { edges: unknown; data: Map<string, unknown> } = { edges: null, data: new Map() };
+  private floatLinear = false;
 
   attach(canvas: HTMLCanvasElement, launch?: Launch): void {
     this.stop();
@@ -112,7 +113,7 @@ export class Engine {
       this.failFixed("MAX_VERTEX_TEXTURE_IMAGE_UNITS is 0. The point MAT needs vertex texture fetch.");
       return;
     }
-    gl.getExtension("OES_texture_float_linear");
+    this.floatLinear = gl.getExtension("OES_texture_float_linear") != null;
     this.gl = gl;
     const signal = this.abort.signal;
     canvas.addEventListener(
@@ -315,12 +316,13 @@ export class Engine {
     const y = Math.floor((COOK_H - CAPTURE_H) / 2);
     twgl.bindFramebufferInfo(gl, runtime.front);
     gl.pixelStorei(gl.PACK_ALIGNMENT, 1);
-    const raw = new Uint16Array(CAPTURE_W * CAPTURE_H * 4);
+    // RGBA/FLOAT is the readback every float color buffer guarantees, RGBA16F or RGBA32F (feedback).
+    const raw = new Float32Array(CAPTURE_W * CAPTURE_H * 4);
     gl.getError();
-    gl.readPixels(x, y, CAPTURE_W, CAPTURE_H, gl.RGBA, gl.HALF_FLOAT, raw);
+    gl.readPixels(x, y, CAPTURE_W, CAPTURE_H, gl.RGBA, gl.FLOAT, raw);
     const error = gl.getError();
     if (error !== gl.NO_ERROR) {
-      throw new Error(`HALF_FLOAT readPixels failed (gl ${error}). RGBA16F readback is required; not falling back to RGBA8.`);
+      throw new Error(`FLOAT readPixels failed (gl ${error}). Float readback is required; not falling back to RGBA8.`);
     }
     const rgba = new Uint8Array(CAPTURE_W * CAPTURE_H * 4);
     for (let row = 0; row < CAPTURE_H; row++) {
@@ -1198,7 +1200,11 @@ export class Engine {
     if (existing) {
       existing.source = source;
       existing.info = info;
-      if (feedback && !existing.back) existing.back = this.makeTarget(COOK_W, COOK_H);
+      if (feedback && !existing.back && this.gl) {
+        freeTarget(this.gl, existing.front);
+        existing.front = this.makeTarget(COOK_W, COOK_H, true);
+        existing.back = this.makeTarget(COOK_W, COOK_H, true);
+      }
       if (!feedback && existing.back && this.gl) {
         freeTarget(this.gl, existing.back);
         existing.back = null;
@@ -1208,8 +1214,8 @@ export class Engine {
     const created: Runtime = {
       source,
       info,
-      front: this.makeTarget(COOK_W, COOK_H),
-      back: feedback ? this.makeTarget(COOK_W, COOK_H) : null,
+      front: this.makeTarget(COOK_W, COOK_H, feedback),
+      back: feedback ? this.makeTarget(COOK_W, COOK_H, true) : null,
     };
     this.runtime.set(id, created);
     return created;
@@ -1276,15 +1282,20 @@ export class Engine {
     );
   }
 
-  private makeTarget(w: number, h: number): twgl.FramebufferInfo {
+  /**
+   * RGBA16F by default. Feedback buffers are RGBA32F like ShaderToy's buffers: a half float
+   * rounds away per-frame steps below its ulp, so integrators stall or jump in bands.
+   */
+  private makeTarget(w: number, h: number, full = false): twgl.FramebufferInfo {
     const gl = this.gl;
     if (!gl) throw new Error("no gl");
+    const filter = full && !this.floatLinear ? gl.NEAREST : gl.LINEAR;
     const attach = {
-      internalFormat: gl.RGBA16F,
+      internalFormat: full ? gl.RGBA32F : gl.RGBA16F,
       format: gl.RGBA,
-      type: gl.HALF_FLOAT,
-      min: gl.LINEAR,
-      mag: gl.LINEAR,
+      type: full ? gl.FLOAT : gl.HALF_FLOAT,
+      min: filter,
+      mag: filter,
       wrap: gl.CLAMP_TO_EDGE,
     };
     const fbi = twgl.createFramebufferInfo(gl, [attach], w, h);
@@ -1442,8 +1453,7 @@ function judge(pixels: Uint16Array): string | null {
   return null;
 }
 
-function quantize(h: number): number {
-  const value = halfToFloat(h);
+function quantize(value: number): number {
   if (!Number.isFinite(value)) return 0;
   return Math.max(0, Math.min(255, Math.round(value * 255)));
 }
