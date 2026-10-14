@@ -1,0 +1,16 @@
+{
+  "viewer": "out",
+  "nodes": [
+    { "id": "rings", "kind": "shader", "label": "rings", "shader": "comp-rings.glsl", "x": 40, "y": 20 },
+    { "id": "warp", "kind": "shader", "label": "warp", "shader": "warp.glsl", "x": 40, "y": 200 },
+    { "id": "mask", "kind": "shader", "label": "hex matte", "shader": "comp-mask.glsl", "x": 40, "y": 380 },
+    { "id": "comp", "kind": "shader", "label": "composite", "shader": "composite.glsl", "x": 340, "y": 200 },
+    { "id": "out", "kind": "out", "label": "out", "x": 640, "y": 200 }
+  ],
+  "edges": [
+    { "source": "rings", "target": "comp", "targetHandle": "ch0" },
+    { "source": "warp", "target": "comp", "targetHandle": "ch1" },
+    { "source": "mask", "target": "comp", "targetHandle": "ch2" },
+    { "source": "comp", "target": "out", "targetHandle": "ch0" }
+  ]
+}
