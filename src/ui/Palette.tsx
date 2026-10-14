@@ -1,5 +1,5 @@
 import { useReactFlow } from "@xyflow/react";
-import { useLayoutEffect, useMemo, useRef, useState } from "react";
+import { type PointerEvent, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { FAMILIES, type Family } from "../family";
 import { paletteEntries } from "../ops/catalog";
 import { useGraph } from "../store";
@@ -12,6 +12,10 @@ export function Palette() {
   const [query, setQuery] = useState("");
   const [family, setFamily] = useState<Family | "all">("all");
   const box = useRef<HTMLInputElement>(null);
+  const panel = useRef<HTMLDivElement>(null);
+  // Dragging moves the panel only. New ops still land where it was opened.
+  const [offset, setOffset] = useState({ x: 0, y: 0 });
+  const [drag, setDrag] = useState<{ x: number; y: number } | null>(null);
 
   // Focus in the same task that opened the palette, so a key typed right after Tab or a
   // double-click lands in the filter instead of being dropped.
@@ -19,6 +23,7 @@ export function Palette() {
     if (!palette) return;
     setQuery("");
     setFamily("all");
+    setOffset({ x: 0, y: 0 });
     box.current?.focus();
   }, [palette]);
 
@@ -37,8 +42,42 @@ export function Palette() {
     addOp(opFamily, type, flow.screenToFlowPosition({ x: palette.x, y: palette.y }));
   }
 
+  function move(event: PointerEvent): void {
+    if (!drag || !palette || !panel.current) return;
+    // Keep the bar on screen so the panel can always be grabbed back.
+    const width = panel.current.offsetWidth;
+    const x = Math.min(Math.max(event.clientX - drag.x, 40 - width), window.innerWidth - 40);
+    const y = Math.min(Math.max(event.clientY - drag.y, 0), window.innerHeight - 24);
+    setOffset({ x: x - palette.x, y: y - palette.y });
+  }
+
   return (
-    <div className="palette" style={{ left: palette.x, top: palette.y }} onKeyDown={(event) => event.stopPropagation()}>
+    <div
+      ref={panel}
+      className="palette"
+      style={{ left: palette.x + offset.x, top: palette.y + offset.y }}
+      onKeyDown={(event) => event.stopPropagation()}
+    >
+      <div
+        className={`palette-bar${drag ? " is-dragging" : ""}`}
+        onPointerDown={(event) => {
+          if (event.button !== 0 || (event.target as HTMLElement).closest("button")) return;
+          event.preventDefault();
+          event.currentTarget.setPointerCapture(event.pointerId);
+          setDrag({ x: event.clientX - palette.x - offset.x, y: event.clientY - palette.y - offset.y });
+        }}
+        onPointerMove={move}
+        onPointerUp={() => {
+          setDrag(null);
+          box.current?.focus();
+        }}
+        onPointerCancel={() => setDrag(null)}
+      >
+        <span>add op</span>
+        <button type="button" title="close (Esc)" onClick={closePalette}>
+          ×
+        </button>
+      </div>
       <input
         ref={box}
         value={query}

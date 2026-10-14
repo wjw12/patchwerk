@@ -37,7 +37,7 @@ button:hover { border-color: #8d7cff; }
 #stats {
   position: fixed;
   z-index: 30;
-  top: 50px;
+  top: 82px;
   right: 12px;
   padding: 4px 6px;
   font: 12px/1 ui-monospace, monospace;
@@ -166,6 +166,20 @@ button:hover { border-color: #8d7cff; }
 .viewer header button { margin-left: auto; }
 .viewer { border-bottom: 1px solid #222636; }
 .viewer canvas { flex: 1; width: 100%; min-height: 0; background: #05060a; display: block; }
+.viewer:fullscreen { position: relative; background: #05060a; border: 0; }
+/* Fullscreen gives the canvas the whole screen; the header floats over it on hover. */
+.viewer:fullscreen header {
+  position: absolute;
+  inset: 0 0 auto;
+  z-index: 1;
+  background: linear-gradient(rgba(5, 6, 10, 0.85), rgba(5, 6, 10, 0));
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+.viewer:fullscreen header:hover, .viewer:fullscreen header:focus-within { opacity: 1; }
+.viewer-actions { margin-left: auto; display: flex; gap: 4px; }
+.viewer-actions button { padding: 1px 8px; font-size: 11px; color: #9a948a; background: transparent; }
+.viewer-actions button:hover { color: #ebe7df; }
 .params { overflow: auto; }
 .empty { margin: 12px; color: #9a948a; font-size: 12px; }
 
@@ -312,6 +326,21 @@ button:hover { border-color: #8d7cff; }
   border-radius: 8px;
   box-shadow: 0 16px 40px rgba(0, 0, 0, 0.45);
 }
+.palette-bar {
+  display: flex;
+  align-items: center;
+  margin: -4px -4px 0;
+  padding: 0 0 0 6px;
+  font-size: 11px;
+  color: #8a90a8;
+  cursor: grab;
+  user-select: none;
+  touch-action: none;
+}
+.palette-bar.is-dragging { cursor: grabbing; }
+.palette-bar span { flex: 1; }
+.palette-bar button { padding: 0 6px; font-size: 15px; line-height: 20px; background: transparent; border-color: transparent; color: #8a90a8; }
+.palette-bar button:hover { color: #ebe7df; border-color: #34384a; }
 .palette input { background: #1c2030; border: 1px solid #34384a; border-radius: 4px; padding: 4px 8px; }
 .palette-filters { display: flex; gap: 4px; flex-wrap: wrap; }
 .palette-filters button.is-on { border-color: #e07ad4; }

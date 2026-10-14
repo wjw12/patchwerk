@@ -3,7 +3,8 @@ import { CAPTURE_H, CAPTURE_W } from "../src/capture";
 export const region = { width: CAPTURE_W, height: CAPTURE_H };
 
 // Max per-channel difference, 0–255, on the center 256×256 of the `out` node.
-// The read is RGBA16F from that node's framebuffer, quantized to 8-bit.
+// out draws at 1920×1080; the capture runs its pass again at the 960×540 cook size and reads that.
+// The read is RGBA16F, quantized to 8-bit.
 export const tolerance = 2;
 
 export interface VisualCase {
