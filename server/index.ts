@@ -3,11 +3,12 @@
 import type { ServerWebSocket } from "bun";
 import { Hocuspocus, type WebSocketLike } from "@hocuspocus/server";
 import { roomStore } from "./rooms";
+import { aiSocket, aiStatus } from "./ai";
 
 const PORT = Number(process.env.PORT ?? 3000);
 const DATA = process.env.DATA_DIR ?? "./data/rooms";
 
-type Socket = ServerWebSocket<{ request: Request; client?: ReturnType<Hocuspocus["handleConnection"]> }>;
+type Socket = ServerWebSocket<{ request: Request; ai: boolean; client?: ReturnType<Hocuspocus["handleConnection"]> }>;
 
 const hocuspocus = new Hocuspocus({
   quiet: true,
@@ -29,24 +30,27 @@ const server = Bun.serve<Socket["data"]>({
   fetch(request, server) {
     const url = new URL(request.url);
     if (request.headers.get("upgrade")?.toLowerCase() === "websocket") {
-      return server.upgrade(request, { data: { request } }) ? undefined : new Response("upgrade failed", { status: 400 });
+      return server.upgrade(request, { data: { request, ai: url.pathname === "/ai" } }) ? undefined : new Response("upgrade failed", { status: 400 });
     }
     if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: CORS });
     if (url.pathname === "/health") {
       const rooms = [...hocuspocus.documents.entries()].map(([name, doc]) => ({ name, clients: doc.getConnectionsCount() }));
-      return Response.json({ ok: true, rooms }, { headers: CORS });
+      return Response.json({ ok: true, rooms, ai: aiStatus() }, { headers: CORS });
     }
     return new Response("patchwerk room server. connect a websocket here.", { headers: CORS });
   },
   websocket: {
     open(ws: Socket) {
+      if (ws.data.ai) return aiSocket.open(ws);
       ws.data.client = hocuspocus.handleConnection(ws as unknown as WebSocketLike, ws.data.request);
     },
     message(ws: Socket, message) {
+      if (ws.data.ai) return aiSocket.message(ws, message);
       const bytes = typeof message === "string" ? new TextEncoder().encode(message) : new Uint8Array(message);
       ws.data.client?.handleMessage(bytes);
     },
     close(ws: Socket, code, reason) {
+      if (ws.data.ai) return aiSocket.close(ws);
       ws.data.client?.handleClose({ code, reason });
     },
     // Hocuspocus drops a client it hasn't heard from in 60 s; the provider pings well inside that.

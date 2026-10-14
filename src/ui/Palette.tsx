@@ -34,7 +34,7 @@ export function Palette() {
 
   function place(type: string, opFamily: Family): void {
     if (!palette) return;
-    addOp(opFamily, type, flow.screenToFlowPosition({ x: palette.x, y: palette.y }));
+    addOp(opFamily, type, { position: flow.screenToFlowPosition({ x: palette.x, y: palette.y }) });
   }
 
   return (

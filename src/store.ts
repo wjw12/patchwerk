@@ -62,6 +62,13 @@ export interface OutData {
 
 export type NodeData = ShaderData | AudioData | OutData | OpData;
 export type RfKind = "top" | "chop" | "pop" | "mat" | "comp";
+
+export interface AddOpOptions {
+  position?: { x: number; y: number };
+  after?: string;
+  label?: string;
+  select?: boolean;
+}
 export type PNode = Node<NodeData, RfKind>;
 
 export interface GraphState {
@@ -86,7 +93,7 @@ export interface GraphState {
   openPalette: (x: number, y: number) => void;
   closePalette: () => void;
   setGpuError: (message: string | null) => void;
-  addOp: (family: Family, type: string, position?: { x: number; y: number }) => void;
+  addOp: (family: Family, type: string, options?: AddOpOptions) => string;
   replace: (nodes: PNode[], edges: Edge[]) => void;
   /** Bumped when a whole graph was loaded; the network fits its view to it. */
   fit: number;
@@ -279,25 +286,26 @@ export const useGraph = create<GraphState>((set, get) => ({
   openPalette: (x, y) => set({ palette: { x, y } }),
   closePalette: () => set({ palette: null }),
   setGpuError: (message) => set({ gpuError: message }),
-  addOp: (family, type, position) => {
-    const at = position ?? { x: 120 + Math.random() * 180, y: 80 + Math.random() * 140 };
+  addOp: (family, type, options = {}) => {
+    const select = options.select ?? true;
     const id = `${type.slice(0, 4)}${crypto.randomUUID().slice(0, 4)}`;
     const { nodes, edges } = get();
-    const node = makeNode(id, uniqueLabel(`${type}1`, nodes), family, type, at);
     const picked = nodes.filter((item) => item.selected);
-    const after = picked.length === 1 ? picked[0] : undefined;
+    const after = options.after ? nodes.find((item) => item.id === options.after) : select && picked.length === 1 ? picked[0] : undefined;
+    const at = options.position ?? placeNear(after, nodes);
+    const node = makeNode(id, uniqueLabel(options.label ?? `${type}1`, nodes), family, type, at, select);
     if (node.data.kind === "op") node.data = { ...node.data, pars: guessRefs(node.data.pars, nodes, edges, after) };
-    // Placed while one op of the same family is selected: wire it after that op, like TouchDesigner.
     const inlet = nodeInlets(node.data)[0];
     const wire = after && inlet && after.data.family === family && nodeOutlet(after.data);
     set((state) => ({
       palette: null,
-      editorOpen: type === "shader" ? true : state.editorOpen,
-      nodes: [...state.nodes.map((item) => ({ ...item, selected: false })), node],
+      editorOpen: select && type === "shader" ? true : state.editorOpen,
+      nodes: select ? [...state.nodes.map((item) => ({ ...item, selected: false })), node] : [...state.nodes, node],
       edges: wire
         ? addEdge({ source: after.id, sourceHandle: "out", target: id, targetHandle: inlet, style: wireStyle(family) }, state.edges)
         : state.edges,
     }));
+    return id;
   },
   replace: (nodes, edges) => set({ nodes, edges }),
   fit: 0,
@@ -388,8 +396,19 @@ function followRename(node: PNode, old: string, next: string): PNode {
   return changed ? { ...node, data: { ...node.data, pars } } : node;
 }
 
-function makeNode(id: string, label: string, family: Family, type: string, position: { x: number; y: number }): PNode {
-  const selected = true;
+function placeNear(after: PNode | undefined, nodes: PNode[]): { x: number; y: number } {
+  if (after) return clearOf({ x: after.position.x + 220, y: after.position.y }, nodes);
+  if (nodes.length === 0) return { x: 120, y: 80 };
+  return { x: 120, y: Math.max(...nodes.map((node) => node.position.y)) + 160 };
+}
+
+function clearOf(at: { x: number; y: number }, nodes: PNode[]): { x: number; y: number } {
+  let y = at.y;
+  while (nodes.some((node) => Math.abs(node.position.x - at.x) < 200 && Math.abs(node.position.y - y) < 140)) y += 160;
+  return { x: at.x, y };
+}
+
+function makeNode(id: string, label: string, family: Family, type: string, position: { x: number; y: number }, selected: boolean): PNode {
   if (type === "shader" && family === "TOP") {
     const parsed = parseShader(TEMPLATE);
     const data: ShaderData = {

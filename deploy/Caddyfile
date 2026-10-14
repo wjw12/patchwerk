@@ -3,8 +3,11 @@
 patchwerk.heurist.xyz {
 	encode zstd gzip
 
-	# Room websocket (Hocuspocus) and its health check.
+	# Room websocket (Hocuspocus), the AI agent websocket and the health check.
 	handle /sync* {
+		reverse_proxy localhost:3000
+	}
+	handle /ai {
 		reverse_proxy localhost:3000
 	}
 	handle /health {

@@ -135,6 +135,11 @@ export function Header() {
           {peers.map((peer) => (
             <span key={peer.id} className="peer" style={{ background: peer.color }} title={peer.editing ? `editing ${peer.editing}` : undefined}>
               {peer.name}
+              {peer.agent && (
+                <span className="peer-agent" title="claude is working from this tab">
+                  ✦
+                </span>
+              )}
             </span>
           ))}
         </div>

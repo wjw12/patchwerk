@@ -287,3 +287,42 @@ export function paletteEntries(): PaletteEntry[] {
   const ops = OPS.map((spec) => ({ family: spec.family, type: spec.type }));
   return [...ops, { family: "TOP", type: "shader" }, { family: "TOP", type: "audio" }, { family: "TOP", type: "out" }];
 }
+
+export const DESCRIBE: Record<string, string> = {
+  "CHOP:lfo": "sin(2π·frequency·t)·amp + offset",
+  "CHOP:pattern": "sin(2π·phase)·amp; drive phase with an expression",
+  "CHOP:audioband": "mean spectrum level between lo..hi (fractions of 512 bins) × gain; synthetic spectrum until a human enables the mic",
+  "CHOP:math": "remap: in0 from [from1,from2] to [to1,to2]; add: in0 + in1",
+  "CHOP:null": "passes in0; a stable name to reference",
+  "POP:pointgen": "n points on a circle or sphere of size s",
+  "POP:noise": "adds attribute Noise per point; does not move points; follow with mathmix. t4d animates it",
+  "POP:mathmix": "result = A + B·C | A − B | mix(A, B, clamp(C, 0, 1)); a scope is an attribute (P, Noise, an earlier result) or a number",
+  "POP:mathcombine": "as mathmix; scopeB must exist upstream, scopeC may name this node's weight par",
+  "POP:transform": "translate, rotate (degrees) and scale every point",
+  "POP:merge": "concatenates in0 and in1, at most 4096 points total",
+  "POP:null": "passes in0",
+  "MAT:point": "additive points; color above 1 blooms",
+  "COMP:cam": "camera at t looking at look",
+  "COMP:geo": "what render draws",
+  "TOP:render": "draws the geo's points into an image",
+  "TOP:bloom": "glow",
+};
+
+function describePar(par: Par): string {
+  if (par.kind === "menu") return `${par.name} ${par.options.join("|")}`;
+  if (par.kind === "text") return par.ref ? `${par.name} <${par.ref.type ?? par.ref.family} label>` : `${par.name} ${par.value}`;
+  return `${par.name} ${par.value} [${par.min}..${par.max}]${par.step === 1 ? " int" : ""}`;
+}
+
+export function catalogText(): string {
+  const lines = OPS.map((spec) => {
+    const pars = spec.pars.length ? spec.pars.map(describePar).join("  ") : "—";
+    return `${spec.family.padEnd(4)} ${spec.type.padEnd(12)} inputs ${spec.inputs}   ${pars}   ${DESCRIBE[`${spec.family}:${spec.type}`] ?? ""}`;
+  });
+  lines.push(
+    "TOP  shader       inlets chN for each iChannelN the code reads   params from @range/@color   one GLSL program",
+    "TOP  audio        inputs 0   the microphone (or a synthetic pattern) as a 512x2 texture",
+    "TOP  out          inlet ch0   the final picture",
+  );
+  return lines.join("\n");
+}

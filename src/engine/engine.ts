@@ -29,6 +29,19 @@ export interface Cursor {
   down: boolean;
 }
 
+export interface FrameStats {
+  mean: number;
+  black: number;
+  nan: number;
+}
+
+export type Snapshot =
+  | { kind: "image"; time: number; png: string; stats: FrameStats | null }
+  | { kind: "chop"; time: number; now: number | null; history: number[] };
+
+type Picture = { x: number; y: number; w: number; h: number };
+type Output = { tex: WebGLTexture; w: number; h: number };
+
 interface Runtime {
   source: string;
   info: twgl.ProgramInfo;
@@ -95,7 +108,7 @@ export class Engine {
   private settledSeen: { edges: unknown; data: Map<string, unknown> } = { edges: null, data: new Map() };
   private floatLinear = false;
   /** Where the last viewer blit put the picture, as fractions of the viewer canvas (y from the top). */
-  private picture: { x: number; y: number; w: number; h: number } | null = null;
+  private picture: Picture | null = null;
   /** Bumped once per cook; see Runtime.cooked. */
   private cookSerial = 0;
   private prevWanted = new Set<string>();
@@ -108,6 +121,104 @@ export class Engine {
   private suspect: { id: string; source: string; good: string | null; at: number } | null = null;
   /** Hashes of shader sources that lost the context. Survives restore and stop(). */
   private poisoned = new Set<string>();
+  private afterCook: (() => void)[] = [];
+  private snapCanvas: HTMLCanvasElement | null = null;
+  private statPixels: Float32Array | null = null;
+  private statFbo: WebGLFramebuffer | null = null;
+
+  get seconds(): number {
+    return this.time;
+  }
+
+  compileNow(id: string): { status: "live" | "error"; error: string | null } {
+    const timer = this.timers.get(id);
+    if (timer) window.clearTimeout(timer);
+    this.timers.delete(id);
+    const node = useGraph.getState().nodes.find((item) => item.id === id);
+    if (!node || node.data.kind !== "shader") return { status: "error", error: "not a shader TOP" };
+    this.drafts.set(id, node.data.draft);
+    this.tryCommit(id);
+    const after = useGraph.getState().nodes.find((item) => item.id === id);
+    if (!after || after.data.kind !== "shader") return { status: "error", error: "the node is gone" };
+    if (after.data.status === "live") return { status: "live", error: null };
+    return { status: "error", error: after.data.error ?? this.failed ?? "the GPU is not ready" };
+  }
+
+  snapshot(id: string, w: number, h: number): Promise<Snapshot> {
+    if (document.hidden) return Promise.reject(new Error("the asking tab is in the background; frames are not cooking; ask the human to bring it to the front"));
+    if (!this.gl) return Promise.reject(new Error("WebGL is not running in the asking tab"));
+    return new Promise((resolve, reject) => {
+      const timer = window.setTimeout(() => {
+        this.afterCook = this.afterCook.filter((item) => item !== paint);
+        reject(new Error(this.failed || "no frame cooked within 2 s"));
+      }, 2000);
+      const paint = () => {
+        window.clearTimeout(timer);
+        try {
+          resolve(this.paintSnapshot(id, w, h));
+        } catch (error) {
+          reject(error instanceof Error ? error : new Error(String(error)));
+        }
+      };
+      this.afterCook.push(paint);
+    });
+  }
+
+  private paintSnapshot(id: string, w: number, h: number): Snapshot {
+    const nodes = useGraph.getState().nodes;
+    const node = nodes.find((item) => item.id === id);
+    if (!node) throw new Error("the node is gone");
+    if (node.data.family === "CHOP") {
+      return { kind: "chop", time: this.time, now: this.chopNow.get(id) ?? null, history: [...(this.chopHist.get(id) ?? [])] };
+    }
+    const gl = this.gl;
+    const host = gl?.canvas as HTMLCanvasElement | undefined;
+    if (!gl || !host) throw new Error("WebGL is not running in the asking tab");
+    const canvas = (this.snapCanvas ??= document.createElement("canvas"));
+    fitCanvas(canvas, { w, h });
+    const ctx = canvas.getContext("2d");
+    if (!ctx) throw new Error("no 2d context for the snapshot");
+    fitCanvas(host, { w: Math.max(host.width, w), h: Math.max(host.height, h) });
+    const output = this.paintInto(node, nodes, canvas, ctx, { w, h }, "snapshot");
+    const stats = output ? this.measure(output) : null;
+    return { kind: "image", time: this.time, png: canvas.toDataURL("image/png").split(",")[1] ?? "", stats };
+  }
+
+  private measure(output: Output): FrameStats | null {
+    const gl = this.gl;
+    if (!gl) return null;
+    const fbo = (this.statFbo ??= gl.createFramebuffer());
+    gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, output.tex, 0);
+    const complete = gl.checkFramebufferStatus(gl.FRAMEBUFFER) === gl.FRAMEBUFFER_COMPLETE;
+    const count = output.w * output.h * 4;
+    if (!this.statPixels || this.statPixels.length < count) this.statPixels = new Float32Array(count);
+    let error: number = gl.NO_ERROR;
+    if (complete) {
+      gl.pixelStorei(gl.PACK_ALIGNMENT, 1);
+      gl.getError();
+      gl.readPixels(0, 0, output.w, output.h, gl.RGBA, gl.FLOAT, this.statPixels);
+      error = gl.getError();
+    }
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, null, 0);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    if (!complete || error !== gl.NO_ERROR) return null;
+    const pixels = output.w * output.h;
+    let sum = 0;
+    let black = 0;
+    let nan = 0;
+    const data = this.statPixels;
+    for (let i = 0; i < count; i += 4) {
+      const luma = data[i]! * 0.3 + data[i + 1]! * 0.59 + data[i + 2]! * 0.11;
+      if (Number.isNaN(luma)) {
+        nan += 1;
+        continue;
+      }
+      sum += clamp01(luma);
+      if (luma < 2 / 255) black += 1;
+    }
+    return { mean: sum / pixels, black: black / pixels, nan };
+  }
 
   attach(canvas: HTMLCanvasElement, launch?: Launch): void {
     this.stop();
@@ -534,6 +645,11 @@ export class Engine {
     this.cookOps(nodes, edges);
     this.pointer.clicked = false;
     if (this.present) this.presentAll(nodes);
+    if (this.afterCook.length) {
+      const waiting = this.afterCook;
+      this.afterCook = [];
+      for (const paint of waiting) paint();
+    }
     const hud = document.getElementById("hud");
     if (hud) {
       const fresh = useGraph.getState().nodes;
@@ -903,42 +1019,55 @@ export class Engine {
     const ctx = this.viewerCtx;
     if (!dest || !ctx) return;
     this.picture = null;
+    this.paintInto(node, nodes, dest, ctx, this.viewerPixels(), "viewer");
+  }
+
+  private paintInto(
+    node: PNode,
+    nodes: PNode[],
+    dest: HTMLCanvasElement,
+    ctx: CanvasRenderingContext2D,
+    size: { w: number; h: number },
+    slot: "viewer" | "snapshot",
+  ): Output | null {
     if (node.data.family === "CHOP") {
-      this.paintScope(dest, ctx, this.chopHist.get(node.id) ?? []);
-      return;
+      this.paintScope(dest, ctx, this.chopHist.get(node.id) ?? [], size);
+      return null;
     }
     if (node.data.family === "POP" && node.data.kind === "op") {
-      this.paintPoints(dest, ctx, node.id);
-      return;
+      this.paintPoints(dest, ctx, node.id, size, slot);
+      return null;
     }
     if (node.data.kind === "op" && node.data.type === "point") {
-      this.paintPoints(dest, ctx, this.popForMat(node, nodes) ?? this.unitPop());
-      return;
+      this.paintPoints(dest, ctx, this.popForMat(node, nodes) ?? this.unitPop(), size, slot);
+      return null;
     }
     if (node.data.kind === "op" && (node.data.type === "cam" || node.data.type === "geo")) {
       const image = this.renderFor(node, nodes);
-      if (image && this.outputTexture(image)) {
-        this.blitViewer(image);
-        return;
-      }
+      if (image && this.outputTexture(image)) return this.blitImage(image, dest, ctx, size);
       const pop =
         node.data.type === "geo"
           ? this.popId(nodes, this.resolved.get(node.id)?.text.pop ?? "")
           : this.popForCam(node, nodes);
-      this.paintPoints(dest, ctx, pop ?? this.unitPop());
-      return;
+      this.paintPoints(dest, ctx, pop ?? this.unitPop(), size, slot);
+      return null;
     }
-    if (this.outputTexture(node)) this.blitViewer(node);
+    if (this.outputTexture(node)) return this.blitImage(node, dest, ctx, size);
+    return null;
   }
 
-  private paintScope(dest: HTMLCanvasElement, ctx: CanvasRenderingContext2D, samples: number[]): void {
-    const size = this.viewerPixels();
+  private paintScope(dest: HTMLCanvasElement, ctx: CanvasRenderingContext2D, samples: number[], size: { w: number; h: number }): void {
     fitCanvas(dest, size);
     this.stroke(ctx, samples, "#3dcf8a");
   }
 
-  private paintPoints(dest: HTMLCanvasElement, ctx: CanvasRenderingContext2D, popId: string | null): void {
-    const size = this.viewerPixels();
+  private paintPoints(
+    dest: HTMLCanvasElement,
+    ctx: CanvasRenderingContext2D,
+    popId: string | null,
+    size: { w: number; h: number },
+    slot: "viewer" | "snapshot",
+  ): void {
     fitCanvas(dest, size);
     const pop = popId ? this.pops?.get(popId) : undefined;
     const position = pop?.attrs.get("P");
@@ -949,7 +1078,7 @@ export class Engine {
     }
     const mats = orbitCamera(this.orbit.yaw, this.orbit.pitch, this.orbit.dist, 45, size.w / Math.max(size.h, 1));
     const tex = this.imageOps.preview(
-      "viewer",
+      slot,
       { p: position, n: pop.n, ...mats, scale: this.cloudLook.scale, focus: this.cloudLook.focus, alpha: this.cloudLook.alpha },
       size.w,
       size.h,
@@ -1124,7 +1253,7 @@ export class Engine {
     return [now.getFullYear(), now.getMonth(), now.getDate(), seconds];
   }
 
-  private outputTexture(node: PNode): { tex: WebGLTexture; w: number; h: number } | null {
+  private outputTexture(node: PNode): Output | null {
     const image = this.images.get(node.id);
     if (image) return image;
     if (node.data.kind === "audio" && this.audioTex) return { tex: this.audioTex, w: 512, h: 2 };
@@ -1147,15 +1276,12 @@ export class Engine {
     }
   }
 
-  private blitViewer(node: PNode): void {
+  private blitImage(node: PNode, dest: HTMLCanvasElement, ctx: CanvasRenderingContext2D, size: { w: number; h: number }): Output | null {
     const gl = this.gl;
     const canvas = gl?.canvas as HTMLCanvasElement | undefined;
-    const dest = this.viewer;
-    const ctx = this.viewerCtx;
-    if (!gl || !canvas || !dest || !ctx) return;
+    if (!gl || !canvas) return null;
     const output = this.outputTexture(node);
-    if (!output) return;
-    const size = this.viewerPixels();
+    if (!output) return null;
     fitCanvas(dest, size);
     // Letterbox so a 16:9 cook keeps its shape in any panel. The audio strip (512×2) still stretches.
     let w = size.w;
@@ -1167,13 +1293,14 @@ export class Engine {
     }
     const x = Math.floor((size.w - w) / 2);
     const y = Math.floor((size.h - h) / 2);
-    this.picture = { x: x / size.w, y: y / size.h, w: w / size.w, h: h / size.h };
+    if (dest === this.viewer) this.picture = { x: x / size.w, y: y / size.h, w: w / size.w, h: h / size.h };
     this.blitTexture(output.tex, w, h);
     if (w !== size.w || h !== size.h) {
       ctx.fillStyle = "#05060a";
       ctx.fillRect(0, 0, size.w, size.h);
     }
     ctx.drawImage(canvas, 0, gl.drawingBufferHeight - h, w, h, x, y, w, h);
+    return output;
   }
 
   private blitTexture(tex: WebGLTexture, w: number, h: number): void {

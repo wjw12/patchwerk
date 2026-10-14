@@ -42,7 +42,7 @@ export class ImageOps {
   private nodes = new Map<string, twgl.FramebufferInfo>();
   private pyramid: { down: Level[]; up: Level[] } | null = null;
   /** One scratch target per use, so thumbs and the viewer do not reallocate each other every frame. */
-  private scratch = new Map<"thumb" | "viewer", twgl.FramebufferInfo>();
+  private scratch = new Map<"thumb" | "viewer" | "snapshot", twgl.FramebufferInfo>();
 
   constructor(private gl: WebGL2RenderingContext) {
     this.points = new PointMat(gl);
@@ -98,7 +98,7 @@ export class ImageOps {
   }
 
   /** Same point MAT into a small float target. Used for the node thumb and the orbit viewer. */
-  preview(slot: "thumb" | "viewer", cloud: CloudDraw | null, w: number, h: number): WebGLTexture {
+  preview(slot: "thumb" | "viewer" | "snapshot", cloud: CloudDraw | null, w: number, h: number): WebGLTexture {
     const width = Math.max(2, w);
     const height = Math.max(2, h);
     let target = this.scratch.get(slot);

@@ -24,6 +24,7 @@ Needs `bun run dev` on port 5173 (and `bun run server` for the room test).
 ```sh
 bun run test:visual            # cook one frame per case in tests/visual.config.ts, compare to tests/golden
 bun run test:room              # two tabs in one room: seed, add, type, drag, reload, undo
+bun run smoke:ai ["goal"]      # the assistant drives one real goal through a headless tab (needs server/.env; costs ~$0.05)
 ```
 
 - Goldens are read from the `out` node's float framebuffer, center 256×256, tolerance 2/255. SwiftShader makes them deterministic across machines.

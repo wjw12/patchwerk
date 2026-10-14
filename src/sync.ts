@@ -51,6 +51,7 @@ export interface Peer {
   name: string;
   color: string;
   editing: string | null;
+  agent?: boolean;
 }
 interface SyncState {
   room: string;
@@ -563,6 +564,7 @@ interface PeerState {
   // Not `cursor`: y-codemirror owns that field for the text caret ({ anchor, head }).
   pointer?: Cursor | null;
   editing?: string | null;
+  agent?: boolean;
 }
 
 let peerKey = "";
@@ -574,12 +576,12 @@ function readPeers(awareness: Awareness): void {
     if (clientId === awareness.clientID) return;
     const state = raw as PeerState;
     if (!state.user) return;
-    peers.push({ ...state.user, editing: state.editing ?? null });
+    peers.push({ ...state.user, editing: state.editing ?? null, agent: state.agent === true });
     if (state.pointer) cursors.push(state.pointer);
   });
   engine.setRoomCursors(cursors);
   // Cursors move at pointer rate; only re-render React when membership or focus changes.
-  const key = peers.map((peer) => `${peer.id}:${peer.editing ?? ""}`).join("|");
+  const key = peers.map((peer) => `${peer.id}:${peer.editing ?? ""}:${peer.agent ? 1 : 0}`).join("|");
   if (key !== peerKey) {
     peerKey = key;
     useSync.setState({ peers });
@@ -600,4 +602,8 @@ function publishCursor(awareness: Awareness, cursor: Cursor): void {
 
 export function setEditing(id: string | null): void {
   getAwareness()?.setLocalStateField("editing", id);
+}
+
+export function setAgent(active: boolean): void {
+  getAwareness()?.setLocalStateField("agent", active);
 }

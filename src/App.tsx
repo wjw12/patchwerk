@@ -4,6 +4,7 @@ import { buildGraph } from "./graph-file";
 import { publish } from "./probe";
 import { readSession } from "./session";
 import { useGraph } from "./store";
+import { Assistant } from "./ui/Assistant";
 import { Editor } from "./ui/Editor";
 import { Flow } from "./ui/Flow";
 import { Header } from "./ui/Header";
@@ -56,6 +57,7 @@ export function App() {
       <canvas ref={gl} className="gl-host" />
       <Header />
       <div className="stage">
+        <Assistant />
         <Flow />
         <aside className="side">
           <Viewer />

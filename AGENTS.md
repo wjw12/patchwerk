@@ -22,6 +22,7 @@ Textures stay on the GPU. One hidden WebGL2 canvas cooks every TOP. Node preview
 - `src/store.ts` — graph, wires, parameters. zustand is what the engine reads every frame.
 - `src/sync.ts` — mirrors the store into a Yjs room and back. `src/room.ts` picks the room and who you are.
 - `server/` — the room server. Its own package, deployed on its own machine. See `docs/networking-plan.md`.
+- `src/ai` — the assistant: `protocol.ts` (frames), `execute.ts` (the nine tools, run in the asking tab), `client.ts` (the `useAssistant` store). `src/ui/Assistant.tsx` is the panel. `server/ai.ts` runs the Claude Agent SDK session. See `docs/ai-plan.md`.
 
 ## Rooms
 
@@ -30,6 +31,10 @@ Textures stay on the GPU. One hidden WebGL2 canvas cooks every TOP. Node preview
 Ctrl+Z undoes only your own graph edits. The room chip in the header is the room menu: copy link, new room, duplicate, export, and (demoted, with a confirm) replace this room's graph with a template or file. Template thumbnails are `public/thumbs/<name>.jpg`; regenerate with `bun run thumbs` (needs `bun run dev`) after adding or changing an example. Audio input (off, mic, or a looping file) is per tab and never shared.
 
 `?graph=` / `?t=` / `?frame=` (the visual-test session) never joins a room.
+
+## Assistant
+
+The collapsible panel on the left talks to `/ai` on the room server, which holds the Anthropic key and runs one Claude Agent SDK session per websocket, one per room. The agent's tools (`get_graph`, `read_shader`, `write_shader`, `set_param`, `add_node`, `connect`, `disconnect`, `edit_node`, `view`) are RPC'd back to the asking tab and run against the store and engine there, so its edits reach the room like any human edit and `view` sees the real GPU output. The tab must stay in the foreground: a background tab cooks no frames. The system prompt is `server/prompt.txt` with the catalog from `catalogText()`. `server/.env` needs `ANTHROPIC_API_KEY` (see `server/.env.example`); `AI_MODEL`, `AI_BUDGET_USD` and `AI_TOKEN` are optional. `bun run --cwd server check:ai` is the one-turn smoke test of the SDK under Bun; `bun run smoke:ai` drives a real goal through a headless tab (needs dev + server, costs real money).
 
 ## Now
 
