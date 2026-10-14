@@ -136,6 +136,7 @@ function Stage() {
         <MiniMap
           pannable
           zoomable
+          style={{ width: 132, height: 84 }}
           nodeColor={(node) => CHROME[(node.data as PNode["data"]).family]?.header ?? "#2a2460"}
           maskColor="rgba(0,0,0,0.55)"
         />
