@@ -6,7 +6,7 @@ import { isNewRoomPath, newRoomPath, rememberRoom, roomFromUrl, takeHandOff } fr
 import { readSession } from "./session";
 import { useGraph } from "./store";
 import { connect } from "./sync";
-import { Landing } from "./ui/Landing";
+import { Landing } from "./ui/landing/Landing";
 import "./styles.css";
 import "@xyflow/react/dist/style.css";
 
