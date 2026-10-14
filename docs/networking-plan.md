@@ -71,19 +71,18 @@ Two processes: `bun run dev` (Vite, 5173) and `bun run server` (3000). Open `htt
 
 ## 5. Deployment
 
-Frontend: `bun run build`, host `dist/` anywhere with SPA fallback for `/r/*`. Set `VITE_SYNC_URL=wss://rooms.example.com` at build time.
+One EC2 box serves everything at **https://patchwerk.heurist.xyz** (Elastic IP 13.57.55.141, us-west-1, security group `agent-canvas`: 80 and 443 open, 22 to known IPs, 3000 closed).
 
-Server: `bun run --cwd server start` under systemd or pm2 with a `Caddyfile`:
-```
-rooms.example.com {
-  reverse_proxy localhost:3000
-}
-```
-Caddy gets a certificate and proxies websockets with no extra config. `wss://` is mandatory from an HTTPS page; a mixed-content block looks like "server unreachable". Back up `server/data/` if rooms should survive the box.
+- **Caddy** (`deploy/Caddyfile`, installed to `/etc/caddy/Caddyfile`) gets the Let's Encrypt certificate, serves the build from `/var/www/patchwerk` with SPA fallback for `/r/*`, and proxies `/sync` (the room websocket) and `/health` to `localhost:3000`.
+- **Room server**: pm2 app `patchwerk-server`, `bun index.ts` in `~/patchwerk/server`, `--kill-timeout 5000` so the shutdown flush finishes. Rooms in `~/patchwerk/server/data/rooms`; back that up if rooms matter. pm2 starts on boot through the `pm2-ubuntu` systemd unit.
+- **DNS**: Cloudflare `A patchwerk → 13.57.55.141`, **DNS only** (grey cloud), so Caddy's HTTP challenge and websockets reach the box directly.
+- **Deploy**: push to `main`, then `ssh ubuntu@13.57.55.141 '~/patchwerk/deploy/deploy.sh'` (pull, build, publish, reload Caddy, restart pm2). Restarting the server drops every websocket for a moment; clients reconnect on their own.
+
+The client needs no build-time URL: on an HTTPS page it connects to `wss://<same host>/sync`, on plain HTTP to `ws://<host>:3000`. `VITE_SYNC_URL` overrides both. `bun run dev:remote` runs the local frontend against the deployed server, so a localhost tab and the public site share rooms.
 
 ## 6. Cut, and when to bring it back
 
-- **LLM endpoint** (`POST /api/shader`, SSE) — waits on the Agents SDK spec. Add it as a route in `server/index.ts`; the generate → compile → commit loop runs in the prompting browser and lands in `code`/`committed` like any edit. The AI appears as a participant through awareness.
+- **AI agent** — designed in `ai-plan.md`: a websocket route `/ai` on this server runs a Claude Agent SDK session whose tools execute in the asking browser, so its edits reach the room through the same doc writes as any human edit.
 - **Image upload** — no photo TOP yet. When there is one: `POST /api/upload`, sha256-named file, URL in a node field, same-origin or `crossOrigin='anonymous'`.
 - **Drag/scrub ghosts in awareness** — positions and slider values are written straight to the doc at pointer rate. Fine at hackathon scale; move to awareness if doc traffic ever matters.
 - **Auth, rate limits, per-room epochs for `iTime`** — none needed for the demo.

@@ -1,0 +1,24 @@
+# patchwerk.heurist.xyz: the built frontend and the room server on one host.
+# Caddy gets and renews the certificate itself (DNS record must point here, proxy off).
+patchwerk.heurist.xyz {
+	encode zstd gzip
+
+	# Room websocket (Hocuspocus) and its health check.
+	handle /sync* {
+		reverse_proxy localhost:3000
+	}
+	handle /health {
+		reverse_proxy localhost:3000
+	}
+
+	# Static build. /r/<slug> and every other unknown path is the app.
+	handle {
+		root * /var/www/patchwerk
+		@hashed path /assets/*
+		@page not path /assets/*
+		header @hashed Cache-Control "public, max-age=31536000, immutable"
+		header @page Cache-Control "no-cache"
+		try_files {path} /index.html
+		file_server
+	}
+}

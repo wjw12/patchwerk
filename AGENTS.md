@@ -42,7 +42,8 @@ More POP generators, a GLSL MAT, and DAT text for shader bodies. Networking stay
 ## Development
 
 Use bun: `bun install`, `bun run dev`, `bun test`.
-Rooms need the server: `bun install --cwd server` once, then `bun run server` (port 3000, rooms in `server/data/rooms`). The client reads `VITE_SYNC_URL` (see `.env.example`); without it it uses `ws://<page host>:3000`.
+Rooms need the server: `bun install --cwd server` once, then `bun run server` (port 3000, rooms in `server/data/rooms`). The client reads `VITE_SYNC_URL` (see `.env.example`); without it it uses `wss://<page host>/sync` on HTTPS and `ws://<page host>:3000` on HTTP.
+`bun run dev:remote` runs the local frontend against the deployed room server. Deployed at https://patchwerk.heurist.xyz; see `docs/networking-plan.md` §5 and `deploy/`.
 How to test, and which tier to reach for: [docs/testing.md](docs/testing.md). Manual pass over the app: [docs/walkthrough.md](docs/walkthrough.md).
 `bun run check:shaders` compiles every `src/ops/**/*.glsl` in headless Chromium (SwiftShader).
 `bun run test:visual` compares one cooked frame to `tests/golden`. Update with `bun run test:visual -- --update <name>` only when the picture change is intentional.

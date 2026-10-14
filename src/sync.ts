@@ -181,9 +181,18 @@ export function getAwareness(): Awareness | null {
   return provider?.awareness ?? null;
 }
 
+/**
+ * Served over HTTPS (the deployed site), the room server sits behind the same host at /sync.
+ * Over plain HTTP (vite dev, phones on the LAN) it is the dev server on port 3000.
+ */
+function defaultSyncUrl(): string {
+  if (location.protocol === "https:") return `wss://${location.host}/sync`;
+  return `ws://${location.hostname}:3000`;
+}
+
 export function connect(room: string): void {
   if (provider) return;
-  const url = import.meta.env.VITE_SYNC_URL ?? `ws://${location.hostname}:3000`;
+  const url = import.meta.env.VITE_SYNC_URL || defaultSyncUrl();
   useSync.setState({ room, status: "connecting" });
   provider = new HocuspocusProvider({
     url,

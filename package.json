@@ -4,6 +4,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite --host",
+    "dev:remote": "VITE_SYNC_URL=wss://patchwerk.heurist.xyz/sync vite --host",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview --host",
     "test": "bun test",
