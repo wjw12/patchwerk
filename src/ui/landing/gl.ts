@@ -193,7 +193,7 @@ export type HydraStage = "o1" | "o5" | "post";
 export interface HeroOptions {
   /** DOM boxes that show one hydra stage raw, drawn into the canvas under them. */
   windows: () => { el: HTMLElement; stage: HydraStage; radius: number }[];
-  onFrame?: (seconds: number, fps: number, cook: [number, number]) => void;
+  onFrame?: (seconds: number) => void;
 }
 
 /** The frontiers2026 template (o1 → o5 → post) cooking full-bleed, graded into the page palette. */
@@ -214,8 +214,6 @@ export function hydraHero(canvas: HTMLCanvasElement, options: HeroOptions): () =
   let targets: { o1: twgl.FramebufferInfo[]; o5: twgl.FramebufferInfo[]; post: twgl.FramebufferInfo } | null = null;
   let frame = 0;
   let lens = 0;
-  let fps = 60;
-  let last = 0;
 
   const free = () => {
     if (!targets) return;
@@ -245,10 +243,6 @@ export function hydraHero(canvas: HTMLCanvasElement, options: HeroOptions): () =
       };
       frame = 0;
     }
-    const now = performance.now();
-    if (last) fps += (1000 / Math.max(1, now - last) - fps) * 0.05;
-    last = now;
-
     const time = seconds + 4;
     const res = [cook[0], cook[1], 1];
     const flip = frame % 2;
@@ -313,7 +307,7 @@ export function hydraHero(canvas: HTMLCanvasElement, options: HeroOptions): () =
       });
     }
     gl.disable(gl.SCISSOR_TEST);
-    options.onFrame?.(seconds, fps, cook);
+    options.onFrame?.(seconds);
   });
 
   return () => {

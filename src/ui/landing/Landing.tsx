@@ -28,6 +28,29 @@ function Logo() {
   );
 }
 
+const SITE = "patchwerk.heurist.xyz";
+
+function Announce() {
+  const [pinned, setPinned] = useState(false);
+  return (
+    <div className="lp-announce">
+      <span>Join Frontiers 2026 room and hack shaders together</span>
+      <a href="/r/frontiers-2026-demo?from=frontiers2026">Join room →</a>
+      <div className={`lp-qr${pinned ? " is-pinned" : ""}`}>
+        <button type="button" onClick={() => setPinned((open) => !open)}>
+          QR code
+        </button>
+        <div className="lp-qr-pop">
+          <figure>
+            <img src="/qr-patchwerk.svg" alt={`QR code for ${SITE}`} />
+            <figcaption>{SITE}</figcaption>
+          </figure>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function Nav() {
   const [scrolled, setScrolled] = useState(false);
   useEffect(() => {
@@ -97,7 +120,6 @@ function HeroChat() {
 function Hero() {
   const hero = useRef<HTMLElement>(null);
   const canvas = useRef<HTMLCanvasElement>(null);
-  const hud = useRef<HTMLSpanElement>(null);
 
   useEffect(() => {
     const root = hero.current!;
@@ -110,11 +132,10 @@ function Hero() {
       { from: port("o5", "out"), to: port("post", "in"), paths: root.querySelectorAll<SVGPathElement>('[data-wire="o5-post"]') },
     ];
     const cursors = [q<HTMLElement>('[data-cursor="ada"]'), q<HTMLElement>('[data-cursor="agent"]')];
-    let lastHud = 0;
 
     return hydraHero(canvas.current!, {
       windows: () => windows.filter((item) => item.el.offsetParent !== null),
-      onFrame: (seconds, fps, cook) => {
+      onFrame: (seconds) => {
         const box = root.getBoundingClientRect();
         const center = (el: HTMLElement) => {
           const r = el.getBoundingClientRect();
@@ -132,10 +153,6 @@ function Hero() {
         const h = box.height;
         cursors[0]!.style.transform = `translate(${w * (0.33 + 0.1 * Math.sin(seconds * 0.43))}px, ${h * (0.7 + 0.08 * Math.sin(seconds * 0.71 + 1))}px)`;
         cursors[1]!.style.transform = `translate(${w * (0.76 + 0.06 * Math.sin(seconds * 0.31 + 2))}px, ${h * (0.42 + 0.14 * Math.cos(seconds * 0.5))}px)`;
-        if (seconds - lastHud > 0.5 && hud.current) {
-          lastHud = seconds;
-          hud.current.textContent = `${fps.toFixed(0)} fps · ${cook[0]}×${cook[1]} float`;
-        }
       },
     });
   }, []);
@@ -178,11 +195,11 @@ function Hero() {
 
       <div className="lp-hero-copy">
         <h1>
-          <span className="lp-badge" data-text="Real-time visuals">
-            Real-time visuals
+          <span className="lp-badge" data-text="GM.">
+            GM.
           </span>
-          <span className="lp-badge is-second" data-text="patched together">
-            patched together
+          <span className="lp-badge is-second" data-text="Ship pixels">
+            Ship pixels
           </span>
         </h1>
         <p>
@@ -193,15 +210,9 @@ function Hero() {
             Start a room
           </a>
           <a className="lp-btn is-big" href="/new?from=frontiers2026">
-            Open this patch
+            Fork this patch
           </a>
         </div>
-      </div>
-
-      <div className="lp-hud">
-        <i className="dot is-live" />
-        <b>live</b> <em>frontiers2026 template · o1 → o5 → post · </em>
-        <span ref={hud}>booting</span>
       </div>
     </header>
   );
@@ -591,10 +602,7 @@ export function Landing() {
 
   return (
     <main className="lp">
-      <div className="lp-announce">
-        <span>Rooms are live: share a link and patch the same graph together.</span>
-        <a href="/new?from=demo">Start one →</a>
-      </div>
+      <Announce />
       <Nav />
       <Hero />
       <Ticker />
