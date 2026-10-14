@@ -1,5 +1,12 @@
 import * as twgl from "twgl.js";
 import { CAPTURE_H, CAPTURE_W } from "../capture";
+import { cookChop } from "./chop";
+import { cookOrder } from "./cook";
+import { ExprError, type ExprEnv } from "./expr";
+import { camera, orbitCamera } from "./math";
+import { PopBank, type PopOut } from "./pop";
+import { COOK_H, COOK_W, ImageOps } from "./render";
+import { resolvePars, type Resolved } from "./resolve";
 import { encodeBytes, publish } from "../probe";
 import type { Launch } from "../session";
 import { useGraph } from "../store";
@@ -7,9 +14,6 @@ import type { PNode } from "../store";
 import { FULLSCREEN_VS } from "./fullscreen";
 import { COPY_FS, PASSTHROUGH } from "./sources";
 import { compilerErrors, parseShader, wrapShader, type ShaderParam } from "./wrap";
-
-const COOK_W = 960;
-const COOK_H = 540;
 const TEST_W = 48;
 const TEST_H = 48;
 const THUMB_W = 160;
@@ -63,6 +67,17 @@ export class Engine {
   private dt = 1 / 60;
   private present = true;
   private frameMs = 0;
+  private pops: PopBank | null = null;
+  private imageOps: ImageOps | null = null;
+  private images = new Map<string, { tex: WebGLTexture; w: number; h: number }>();
+  private chopNow = new Map<string, number>();
+  private chopPrev = new Map<string, number>();
+  private chopHist = new Map<string, number[]>();
+  private chopDone = new Set<string>();
+  private resolved = new Map<string, Resolved>();
+  private cloudLook = { scale: 6, focus: 4, alpha: 0.9 };
+  private orbit = { yaw: 0.5, pitch: 0.35, dist: 6 };
+  private skipAdvance = false;
 
   attach(canvas: HTMLCanvasElement, launch?: Launch): void {
     this.stop();
@@ -81,6 +96,10 @@ export class Engine {
     }
     if (!gl.getExtension("EXT_color_buffer_float")) {
       this.failFixed("EXT_color_buffer_float is missing. Refusing to fall back to RGBA8.");
+      return;
+    }
+    if (!gl.getParameter(gl.MAX_VERTEX_TEXTURE_IMAGE_UNITS)) {
+      this.failFixed("MAX_VERTEX_TEXTURE_IMAGE_UNITS is 0. The point MAT needs vertex texture fetch.");
       return;
     }
     gl.getExtension("OES_texture_float_linear");
@@ -133,11 +152,16 @@ export class Engine {
       const dt = Math.min(0.05, Math.max(0, (now - this.last) / 1000));
       this.last = now;
       this.dt = dt;
-      this.time += dt;
-      this.frame += 1;
+      if (this.skipAdvance) this.skipAdvance = false;
+      else if (useGraph.getState().playing) {
+        this.time += dt;
+        this.frame += 1;
+      }
       this.frameMs += (dt * 1000 - this.frameMs) * 0.2;
+      const clock = document.getElementById("abs-time");
+      if (clock) clock.textContent = `absTime  ${this.time.toFixed(2)} s`;
       const stats = document.getElementById("stats");
-      if (stats) stats.textContent = `${this.frameMs.toFixed(2)} ms`;
+      if (stats) stats.textContent = `${this.frameMs > 0.05 ? (1000 / this.frameMs).toFixed(0) : "—"} fps`;
       try {
         this.cook();
       } catch (error) {
@@ -164,11 +188,24 @@ export class Engine {
     this.drafts.clear();
     this.copy = null;
     this.tri = null;
+    this.pops = null;
+    this.imageOps = null;
+    this.images.clear();
   }
 
   invalidate(): void {
     this.drafts.clear();
     if (this.gl) this.watchDrafts(useGraph.getState().nodes);
+  }
+
+  /** Playbar reset. The next presented frame cooks at t = 0. Fixed ?t=&frame= sessions do not call this. */
+  resetClock(): void {
+    this.time = 0;
+    this.frame = 0;
+    this.chopHist.clear();
+    this.skipAdvance = true;
+    const clock = document.getElementById("abs-time");
+    if (clock) clock.textContent = "absTime  0.00 s";
   }
 
   private async runFixed(generation: number): Promise<void> {
@@ -298,7 +335,22 @@ export class Engine {
       this.pointer.down = false;
       this.emitPointer();
     });
-    canvas.addEventListener("pointermove", (event) => this.track(canvas, event));
+    canvas.addEventListener("pointermove", (event) => {
+      if (this.pointer.down && this.orbitingNow()) {
+        this.orbit.yaw += event.movementX * 0.01;
+        this.orbit.pitch = Math.max(-1.2, Math.min(1.2, this.orbit.pitch - event.movementY * 0.01));
+      }
+      this.track(canvas, event);
+    });
+    canvas.addEventListener(
+      "wheel",
+      (event) => {
+        if (!this.orbitingNow()) return;
+        event.preventDefault();
+        this.orbit.dist = Math.min(40, Math.max(0.4, this.orbit.dist * (event.deltaY > 0 ? 1.08 : 0.92)));
+      },
+      { passive: false },
+    );
   }
 
   async enableMic(): Promise<void> {
@@ -396,42 +448,418 @@ export class Engine {
     for (const id of this.runtime.keys()) {
       if (!nodes.some((node) => node.id === id)) this.runtime.delete(id);
     }
-    const selected = nodes.find((node) => node.selected) ?? nodes.find((node) => node.id === "out");
-    this.fillAudio();
-    const order = topo(nodes, edges);
-    for (const id of order) {
-      const node = nodes.find((item) => item.id === id);
-      if (!node) continue;
-      if (node.data.kind === "audio") continue;
-      const source = node.data.kind === "out" ? PASSTHROUGH : node.data.committed;
-      if (!source) continue;
-      const parsed = parseShader(source);
-      const wrapped = wrapShader(source);
-      let info = this.programs.get(hash(wrapped.source));
-      if (!info) {
-        const compiled = this.compile(wrapped.source);
-        if ("error" in compiled) continue;
-        info = compiled.info;
-        this.programs.set(hash(wrapped.source), info);
-      }
-      const rt = this.install(id, source, info, node.data.kind === "shader" && parsed.feedback);
-      const target = rt.back ?? rt.front;
-      const previous = rt.front;
-      this.draw(info, target, this.uniformsFor(node, parsed.params, parsed.feedback, previous, edges, nodes));
-      if (rt.back) {
-        rt.front = rt.back;
-        rt.back = previous;
+    for (const id of [...this.images.keys()]) {
+      if (!nodes.some((node) => node.id === id)) {
+        this.images.delete(id);
+        this.imageOps?.forget(id);
       }
     }
+    const selected = nodes.find((node) => node.selected) ?? nodes.find((node) => node.id === "out");
+    this.fillAudio();
+    this.cookOps(nodes, edges);
     if (this.present) {
       if ((this.frame & 1) === 0 || this.launch.fixed) this.blitPreviews(nodes);
-      if (selected && this.viewer && this.viewerCtx) this.blitViewer(selected);
+      this.drawChopPreviews(nodes);
+      this.drawPopPreviews(nodes);
+      if (selected && this.viewer && this.viewerCtx) this.presentViewer(selected, nodes);
     }
     const hud = document.getElementById("hud");
     if (hud) {
-      const live = nodes.filter((node) => node.data.kind !== "shader" || node.data.status === "live").length;
-      hud.textContent = this.failed || `${live}/${nodes.length} live · ${COOK_W}×${COOK_H} · ${this.frame}`;
+      const fresh = useGraph.getState().nodes;
+      const live = fresh.filter((node) => (node.data.kind !== "shader" && node.data.kind !== "op") || node.data.status === "live").length;
+      hud.textContent = this.failed || `${live}/${fresh.length} live · ${COOK_W}×${COOK_H} · ${this.frame}`;
     }
+  }
+
+  private cookOps(nodes: PNode[], edges: { source: string; target: string; targetHandle?: string | null }[]): void {
+    this.chopPrev = new Map(this.chopNow);
+    this.chopDone = new Set();
+    const order = cookOrder(
+      nodes.map((node) => node.id),
+      (id) => nodes.find((node) => node.id === id)?.data.family ?? "TOP",
+      edges,
+    );
+    for (const id of order) {
+      const node = nodes.find((item) => item.id === id);
+      if (!node || node.data.kind === "audio") continue;
+      if (node.data.kind === "shader" || node.data.kind === "out") {
+        this.cookShader(node, nodes, edges);
+        continue;
+      }
+      if (node.data.kind !== "op") continue;
+      const resolved = resolvePars(node.id, node.data.pars, this.exprEnv(nodes));
+      this.resolved.set(node.id, resolved);
+      const parError = resolved.errors.map((item) => `${item.name}: ${item.error}`).join("\n");
+      let cookError: string | null = null;
+      if (node.data.family === "CHOP") cookError = this.cookChopNode(node, nodes, edges, resolved);
+      else if (node.data.family === "POP") cookError = this.cookPopNode(node, nodes, edges, resolved);
+      else if (node.data.type === "render") cookError = this.cookRenderNode(node, nodes, resolved);
+      else if (node.data.type === "bloom") cookError = this.cookBloomNode(node, nodes, edges, resolved);
+      const error = [parError, cookError].filter((item) => item).join("\n") || null;
+      this.note(node, error);
+    }
+  }
+
+  private cookShader(
+    node: PNode,
+    nodes: PNode[],
+    edges: { source: string; target: string; targetHandle?: string | null }[],
+  ): void {
+    const bypass = node.data.kind === "shader" && node.data.bypass;
+    const source = node.data.kind === "out" || bypass ? PASSTHROUGH : node.data.kind === "shader" ? node.data.committed : null;
+    if (!source) return;
+    const parsed = parseShader(source);
+    const wrapped = wrapShader(source);
+    let info = this.programs.get(hash(wrapped.source));
+    if (!info) {
+      const compiled = this.compile(wrapped.source);
+      if ("error" in compiled) return;
+      info = compiled.info;
+      this.programs.set(hash(wrapped.source), info);
+    }
+    const feedback = node.data.kind === "shader" && !bypass && parsed.feedback;
+    const rt = this.install(node.id, source, info, feedback);
+    const target = rt.back ?? rt.front;
+    const previous = rt.front;
+    this.draw(info, target, this.uniformsFor(node, parsed.params, feedback, previous, edges, nodes));
+    if (rt.back) {
+      rt.front = rt.back;
+      rt.back = previous;
+    }
+  }
+
+  private cookChopNode(
+    node: PNode,
+    nodes: PNode[],
+    edges: { source: string; target: string; targetHandle?: string | null }[],
+    resolved: Resolved,
+  ): string | null {
+    if (node.data.kind !== "op") return null;
+    const a = this.chopSample(this.wired(edges, nodes, node.id, "in0"));
+    const b = this.chopSample(this.wired(edges, nodes, node.id, "in1"));
+    let sample = 0;
+    let error: string | null = null;
+    if (node.data.bypass) sample = a ?? b ?? 0;
+    else {
+      try {
+        sample = cookChop(node.data.type, resolved.num, resolved.menu, { a, b }, this.time);
+      } catch (err) {
+        error = err instanceof Error ? err.message : "chop failed";
+      }
+    }
+    this.chopNow.set(node.id, sample);
+    this.chopDone.add(node.id);
+    const ring = this.chopHist.get(node.id) ?? [];
+    ring.push(sample);
+    if (ring.length > 120) ring.shift();
+    this.chopHist.set(node.id, ring);
+    return error;
+  }
+
+  private cookPopNode(
+    node: PNode,
+    nodes: PNode[],
+    edges: { source: string; target: string; targetHandle?: string | null }[],
+    resolved: Resolved,
+  ): string | null {
+    if (!this.pops || node.data.kind !== "op") return "POP cook is not ready";
+    const input0 = this.popOut(this.wired(edges, nodes, node.id, "in0"));
+    const input1 = this.popOut(this.wired(edges, nodes, node.id, "in1"));
+    return this.pops.cook(node.id, {
+      type: node.data.type,
+      bypass: node.data.bypass,
+      num: resolved.num,
+      menu: resolved.menu,
+      text: resolved.text,
+      input0,
+      input1,
+    });
+  }
+
+  private cookRenderNode(node: PNode, nodes: PNode[], resolved: Resolved): string | null {
+    if (!this.imageOps || node.data.kind !== "op") return "render is not ready";
+    if (node.data.bypass) {
+      this.images.set(node.id, this.imageOps.render(node.id, null));
+      return null;
+    }
+    const geo = this.byLabel(nodes, resolved.text.geo ?? "");
+    if (!geo || geo.data.kind !== "op" || geo.data.type !== "geo") return `geo "${resolved.text.geo ?? ""}" is missing`;
+    const geoResolved = this.resolved.get(geo.id);
+    const pop = this.byLabel(nodes, geoResolved?.text.pop ?? "");
+    const mat = this.byLabel(nodes, geoResolved?.text.mat ?? "");
+    const cam = this.byLabel(nodes, geoResolved?.text.cam ?? "");
+    if (!pop || pop.data.kind !== "op" || pop.data.family !== "POP") return "geo pop is missing";
+    const cloud = this.pops?.get(pop.id);
+    const position = cloud?.attrs.get("P");
+    if (!cloud || !position) return "geo pop has no P";
+    const matResolved = mat?.data.kind === "op" ? this.resolved.get(mat.id) : undefined;
+    const camResolved = cam?.data.kind === "op" ? this.resolved.get(cam.id) : undefined;
+    const scale = matResolved?.num.scale ?? 6;
+    const focus = matResolved?.num.focus ?? 4;
+    const alpha = matResolved?.num.alpha ?? 0.9;
+    this.cloudLook = { scale, focus, alpha };
+    const mats = camera(camResolved?.num.tx ?? 0, camResolved?.num.ty ?? 0, camResolved?.num.tz ?? 5, camResolved?.num.fov ?? 45, COOK_W / COOK_H);
+    this.images.set(node.id, this.imageOps.render(node.id, { p: position, n: cloud.n, ...mats, scale, focus, alpha }));
+    return null;
+  }
+
+  private cookBloomNode(
+    node: PNode,
+    nodes: PNode[],
+    edges: { source: string; target: string; targetHandle?: string | null }[],
+    resolved: Resolved,
+  ): string | null {
+    if (!this.imageOps || node.data.kind !== "op") return "bloom is not ready";
+    const input = this.wired(edges, nodes, node.id, "in0");
+    const image = input ? this.outputTexture(input) : null;
+    if (!image) return "bloom has no input";
+    if (node.data.bypass) {
+      this.images.set(node.id, this.imageOps.copyImage(node.id, image.tex));
+      return null;
+    }
+    this.images.set(
+      node.id,
+      this.imageOps.bloomPass(node.id, image.tex, image.w, image.h, {
+        threshold: resolved.num.threshold ?? 0.01,
+        fill: resolved.num.fill ?? 0.72,
+        intensity: resolved.num.intensity ?? 1.24,
+        pregamma: resolved.num.pregamma ?? 1.5,
+      }),
+    );
+    return null;
+  }
+
+  private exprEnv(nodes: PNode[]): ExprEnv {
+    return {
+      seconds: this.time,
+      op: (name, channel) => {
+        if (channel !== "chan1") throw new ExprError(`['${channel}'] is not cooked`);
+        const found = nodes.find((node) => node.data.label === name || node.id === name);
+        if (!found) throw new ExprError(`op('${name}') is missing`);
+        if (found.data.kind !== "op" || found.data.family !== "CHOP") throw new ExprError(`op('${name}') is not a CHOP`);
+        if (this.chopDone.has(found.id)) {
+          const value = this.chopNow.get(found.id);
+          if (value != null) return value;
+        }
+        const prev = this.chopPrev.get(found.id);
+        if (prev != null) return prev;
+        throw new ExprError(`op('${name}') has no chan1 yet`);
+      },
+    };
+  }
+
+  private note(node: PNode, error: string | null): void {
+    if (node.data.kind !== "op") return;
+    const status = error ? "error" : "live";
+    if (node.data.status === status && node.data.error === error) return;
+    useGraph.getState().setCookStatus(node.id, status, error);
+  }
+
+  private wired(
+    edges: { source: string; target: string; targetHandle?: string | null }[],
+    nodes: PNode[],
+    id: string,
+    handle: string,
+  ): PNode | undefined {
+    const edge = edges.find((item) => item.target === id && item.targetHandle === handle);
+    if (!edge) return undefined;
+    return nodes.find((node) => node.id === edge.source);
+  }
+
+  private chopSample(node: PNode | undefined): number | null {
+    if (!node || node.data.kind !== "op" || node.data.family !== "CHOP") return null;
+    return this.chopNow.get(node.id) ?? null;
+  }
+
+  private popOut(node: PNode | undefined): PopOut | null {
+    if (!node) return null;
+    return this.pops?.get(node.id) ?? null;
+  }
+
+  private byLabel(nodes: PNode[], label: string): PNode | undefined {
+    if (!label) return undefined;
+    return nodes.find((node) => node.data.label === label || node.id === label);
+  }
+
+  private drawChopPreviews(nodes: PNode[]): void {
+    for (const node of nodes) {
+      if (node.data.family !== "CHOP") continue;
+      const ctx = this.previews.get(node.id);
+      if (!ctx) continue;
+      this.stroke(ctx, this.chopHist.get(node.id) ?? [], "#3dcf8a");
+    }
+  }
+
+  private drawPopPreviews(nodes: PNode[]): void {
+    for (const node of nodes) {
+      if (node.data.kind !== "op" || node.data.family !== "POP") continue;
+      const ctx = this.previews.get(node.id);
+      const pop = this.pops?.get(node.id);
+      const position = pop?.attrs.get("P");
+      if (!ctx || !pop || !position || !this.imageOps) continue;
+      if ((this.frame & 1) !== 0 && !node.selected && !this.launch.fixed) continue;
+      const mats = orbitCamera(0.6, 0.35, 5, 45, 16 / 9);
+      const tex = this.imageOps.preview(
+        { p: position, n: pop.n, ...mats, scale: this.cloudLook.scale, focus: this.cloudLook.focus, alpha: this.cloudLook.alpha },
+        160,
+        90,
+      );
+      this.blitToContext(ctx, tex, 160, 90);
+    }
+  }
+
+  private presentViewer(node: PNode, nodes: PNode[]): void {
+    const dest = this.viewer;
+    const ctx = this.viewerCtx;
+    if (!dest || !ctx) return;
+    if (node.data.family === "CHOP") {
+      this.paintScope(dest, ctx, this.chopHist.get(node.id) ?? []);
+      return;
+    }
+    if (node.data.family === "POP" && node.data.kind === "op") {
+      this.paintPoints(dest, ctx, node.id);
+      return;
+    }
+    if (node.data.kind === "op" && node.data.type === "point") {
+      this.paintPoints(dest, ctx, this.popForMat(node, nodes) ?? this.unitPop());
+      return;
+    }
+    if (node.data.kind === "op" && (node.data.type === "cam" || node.data.type === "geo")) {
+      const image = this.renderFor(node, nodes);
+      if (image && this.outputTexture(image)) {
+        this.blitViewer(image);
+        return;
+      }
+      const pop =
+        node.data.type === "geo"
+          ? this.popId(nodes, this.resolved.get(node.id)?.text.pop ?? "")
+          : this.popForCam(node, nodes);
+      this.paintPoints(dest, ctx, pop ?? this.unitPop());
+      return;
+    }
+    if (this.outputTexture(node)) this.blitViewer(node);
+  }
+
+  private paintScope(dest: HTMLCanvasElement, ctx: CanvasRenderingContext2D, samples: number[]): void {
+    const size = this.viewerPixels();
+    dest.width = size.w;
+    dest.height = size.h;
+    this.stroke(ctx, samples, "#3dcf8a");
+  }
+
+  private paintPoints(dest: HTMLCanvasElement, ctx: CanvasRenderingContext2D, popId: string | null): void {
+    const size = this.viewerPixels();
+    dest.width = size.w;
+    dest.height = size.h;
+    const pop = popId ? this.pops?.get(popId) : undefined;
+    const position = pop?.attrs.get("P");
+    if (!pop || !position || !this.imageOps) {
+      ctx.fillStyle = "#05060a";
+      ctx.fillRect(0, 0, dest.width, dest.height);
+      return;
+    }
+    const mats = orbitCamera(this.orbit.yaw, this.orbit.pitch, this.orbit.dist, 45, size.w / Math.max(size.h, 1));
+    const tex = this.imageOps.preview(
+      { p: position, n: pop.n, ...mats, scale: this.cloudLook.scale, focus: this.cloudLook.focus, alpha: this.cloudLook.alpha },
+      size.w,
+      size.h,
+    );
+    this.blitToContext(ctx, tex, size.w, size.h);
+  }
+
+  private blitToContext(ctx: CanvasRenderingContext2D, tex: WebGLTexture, w: number, h: number): void {
+    const gl = this.gl;
+    const canvas = gl?.canvas as HTMLCanvasElement | undefined;
+    if (!gl || !canvas) return;
+    this.ensureDrawingBuffer(Math.max(w, THUMB_W), Math.max(h, THUMB_H));
+    this.blitTexture(tex, w, h);
+    ctx.drawImage(canvas, 0, gl.drawingBufferHeight - h, w, h, 0, 0, ctx.canvas.width, ctx.canvas.height);
+  }
+
+  private stroke(ctx: CanvasRenderingContext2D, samples: number[], color: string): void {
+    const w = ctx.canvas.width;
+    const h = ctx.canvas.height;
+    ctx.clearRect(0, 0, w, h);
+    ctx.fillStyle = "#05060a";
+    ctx.fillRect(0, 0, w, h);
+    if (samples.length < 2) return;
+    let min = -1;
+    let max = 1;
+    for (const sample of samples) {
+      min = Math.min(min, sample);
+      max = Math.max(max, sample);
+    }
+    const span = max - min || 1;
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    samples.forEach((sample, index) => {
+      const x = (index / (samples.length - 1)) * (w - 2) + 1;
+      const y = h - 2 - ((sample - min) / span) * (h - 4);
+      if (index === 0) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
+    });
+    ctx.stroke();
+  }
+
+  private popForMat(mat: PNode, nodes: PNode[]): string | null {
+    const geo = nodes.find((node) => {
+      if (node.data.kind !== "op" || node.data.type !== "geo") return false;
+      const label = this.resolved.get(node.id)?.text.mat ?? "";
+      return label === mat.data.label || label === mat.id;
+    });
+    if (!geo) return null;
+    return this.popId(nodes, this.resolved.get(geo.id)?.text.pop ?? "");
+  }
+
+  private popForCam(cam: PNode, nodes: PNode[]): string | null {
+    const geo = nodes.find((node) => {
+      if (node.data.kind !== "op" || node.data.type !== "geo") return false;
+      const label = this.resolved.get(node.id)?.text.cam ?? "";
+      return label === cam.data.label || label === cam.id;
+    });
+    if (!geo) return null;
+    return this.popId(nodes, this.resolved.get(geo.id)?.text.pop ?? "");
+  }
+
+  private popId(nodes: PNode[], label: string): string | null {
+    const node = this.byLabel(nodes, label);
+    if (!node || node.data.kind !== "op" || node.data.family !== "POP") return null;
+    return node.id;
+  }
+
+  private renderFor(node: PNode, nodes: PNode[]): PNode | undefined {
+    return nodes.find((item) => {
+      if (item.data.kind !== "op" || item.data.type !== "render") return false;
+      const geo = this.byLabel(nodes, this.resolved.get(item.id)?.text.geo ?? "");
+      if (!geo || geo.data.kind !== "op" || geo.data.type !== "geo") return false;
+      if (node.data.type === "geo") return geo.id === node.id;
+      const cam = this.resolved.get(geo.id)?.text.cam ?? "";
+      return cam === node.data.label || cam === node.id;
+    });
+  }
+
+  private unitPop(): string | null {
+    if (!this.pops) return null;
+    if (!this.pops.get("__unit__")) {
+      this.pops.cook("__unit__", {
+        type: "pointgen",
+        bypass: false,
+        num: { n: 64, s: 0.5 },
+        menu: { shape: "circle" },
+        text: {},
+        input0: null,
+        input1: null,
+      });
+    }
+    return this.pops.get("__unit__") ? "__unit__" : null;
+  }
+
+  private orbitingNow(): boolean {
+    const node = useGraph.getState().nodes.find((item) => item.selected);
+    if (!node) return false;
+    if (node.data.family === "POP") return true;
+    return node.data.kind === "op" && (node.data.type === "point" || node.data.type === "geo" || node.data.type === "cam");
   }
 
   private uniformsFor(
@@ -491,6 +919,8 @@ export class Engine {
   }
 
   private outputTexture(node: PNode): { tex: WebGLTexture; w: number; h: number } | null {
+    const image = this.images.get(node.id);
+    if (image) return image;
     if (node.data.kind === "audio" && this.audioTex) return { tex: this.audioTex, w: 512, h: 2 };
     const rt = this.runtime.get(node.id);
     if (!rt) return null;
@@ -690,6 +1120,8 @@ export class Engine {
       src: this.audioPixels,
     });
     this.testTarget = this.makeTarget(TEST_W, TEST_H);
+    this.pops = new PopBank(gl);
+    this.imageOps = new ImageOps(gl);
     this.byteTarget = twgl.createFramebufferInfo(
       gl,
       [{ format: gl.RGBA, type: gl.UNSIGNED_BYTE, min: gl.NEAREST, mag: gl.NEAREST, wrap: gl.CLAMP_TO_EDGE }],
@@ -830,30 +1262,6 @@ function hash(source: string): string {
     h = Math.imul(h, 16777619);
   }
   return `${h >>> 0}:${source.length}`;
-}
-
-function topo(nodes: PNode[], edges: { source: string; target: string }[]): string[] {
-  const ids = nodes.map((node) => node.id);
-  const indeg = new Map(ids.map((id) => [id, 0]));
-  const next = new Map(ids.map((id) => [id, [] as string[]]));
-  for (const edge of edges) {
-    if (!indeg.has(edge.source) || !indeg.has(edge.target)) continue;
-    next.get(edge.source)?.push(edge.target);
-    indeg.set(edge.target, (indeg.get(edge.target) ?? 0) + 1);
-  }
-  const queue = ids.filter((id) => indeg.get(id) === 0);
-  const order: string[] = [];
-  while (queue.length) {
-    const id = queue.shift();
-    if (!id) break;
-    order.push(id);
-    for (const child of next.get(id) ?? []) {
-      const left = (indeg.get(child) ?? 1) - 1;
-      indeg.set(child, left);
-      if (left === 0) queue.push(child);
-    }
-  }
-  return order.length === ids.length ? order : ids;
 }
 
 function clamp01(value: number): number {

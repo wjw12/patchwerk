@@ -31,11 +31,11 @@ Textures stay on the GPU. One hidden WebGL2 canvas cooks every TOP. Node preview
 
 ## Now
 
-Shader TOPs, an audio texture in ShaderToy's 512×2 layout, self-feedback, a network you can edit, and several people in one network. A new shader keeps the last good program until it compiles and a test frame looks alive.
+The boot graph is a POP cloud. CHOP lfo, pattern, math, and null cook one sample per frame on the CPU. Expressions (`absTime.seconds`, `op('name')['chan1']`, `+ - * /`) are evaluated on the CPU and can point at a CHOP by its label. POP pointgen, noise, mathmix, mathcombine, and transform cook as RGBA32F textures, one texel per point. A point MAT draws them additively into a render TOP, then bloom, then out. The playbar pauses `absTime`. The viewer follows the selection. ShaderToy TOPs, audio, and `// @feedback` still cook; load that graph with `?graph=/tests/graphs/melt.json`.
 
 ## Next
 
-LLM shader generation (`POST /api/shader`, deferred until the Agents SDK spec), image upload for a photo TOP, Caddy in front of the server for `wss://`.
+More POP generators, a GLSL MAT, and DAT text for shader bodies. Networking stays on the current document until it is updated for these families.
 
 ## Development
 

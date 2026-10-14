@@ -1,21 +1,48 @@
 import { Leva, useControls } from "leva";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useGraph, type ShaderData } from "../store";
+import { ParRow } from "./ParRow";
 
 export function Params() {
   const node = useGraph((state) => state.nodes.find((item) => item.selected));
+  const rename = useGraph((state) => state.rename);
   const shader = node?.data.kind === "shader" ? node.data : null;
+  const op = node?.data.kind === "op" ? node.data : null;
+  const [label, setLabel] = useState(node?.data.label ?? "");
+  useEffect(() => setLabel(node?.data.label ?? ""), [node?.id, node?.data.label]);
+
   return (
     <section className="params">
       <header>
         <span>parameters</span>
-        <b>{node?.data.label ?? "none"}</b>
+        {node ? (
+          <input
+            className="rename"
+            value={label}
+            onChange={(event) => setLabel(event.target.value)}
+            onBlur={() => rename(node.id, label)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") (event.target as HTMLInputElement).blur();
+            }}
+          />
+        ) : (
+          <b>none</b>
+        )}
+        {op && <em>{op.type}</em>}
       </header>
-      <Leva fill flat titleBar={false} />
       {shader ? (
-        <ShaderControls key={`${shader.label}:${shader.params.map((param) => param.name).join(",")}`} id={node?.id ?? ""} data={shader} />
+        <>
+          <Leva fill flat titleBar={false} />
+          <ShaderControls key={`${shader.label}:${shader.params.map((param) => param.name).join(",")}`} id={node?.id ?? ""} data={shader} />
+        </>
+      ) : op ? (
+        op.pars.length ? (
+          op.pars.map((par) => <ParRow key={par.name} id={node?.id ?? ""} par={par} />)
+        ) : (
+          <p className="empty">No parameters. This operator copies its input.</p>
+        )
       ) : (
-        <p className="empty">This operator has no shader parameters.</p>
+        <p className="empty">{node ? "This operator has no parameters." : "Select an operator."}</p>
       )}
     </section>
   );
@@ -23,7 +50,6 @@ export function Params() {
 
 function ShaderControls({ id, data }: { id: string; data: ShaderData }) {
   const setParam = useGraph((state) => state.setParam);
-  // Only panel input writes to the store; `set()` below echoes remote values back into Leva.
   const [, set] = useControls(
     () => {
       const schema: Record<string, object> = {};

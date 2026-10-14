@@ -1,6 +1,8 @@
 import type { Edge } from "@xyflow/react";
+import { rfType, wireStyle, type Family } from "./family";
 import { parseShader, type ShaderParam } from "./engine/wrap";
-import type { PNode, ShaderData } from "./store";
+import { applyParOverrides, createOpData, type ParOverride } from "./ops/catalog";
+import type { AudioData, OutData, PNode, ShaderData } from "./store";
 
 const shaders = import.meta.glob("./ops/*.glsl", {
   query: "?raw",
@@ -8,17 +10,21 @@ const shaders = import.meta.glob("./ops/*.glsl", {
   eager: true,
 }) as Record<string, string>;
 
-const wire = "#8d7cff";
+const FAMILIES = new Set<Family>(["POP", "CHOP", "TOP", "MAT", "COMP"]);
 
 interface GraphNode {
   id: string;
-  kind: "shader" | "audio" | "out";
+  kind: string;
+  family?: Family;
+  type?: string;
   label?: string;
   shader?: string;
   source?: string;
   x?: number;
   y?: number;
+  bypass?: boolean;
   params?: Record<string, number | string | number[]>;
+  pars?: Record<string, ParOverride>;
 }
 
 export interface GraphFile {
@@ -32,15 +38,17 @@ export function buildGraph(file: GraphFile): { nodes: PNode[]; edges: Edge[]; vi
   const viewer = file.viewer ?? "out";
   const nodes = file.nodes.map((node) => toNode(node, node.id === viewer));
   if (!nodes.some((node) => node.id === viewer)) throw new Error(`graph viewer "${viewer}" is not a node`);
+  const byId = new Map(nodes.map((node) => [node.id, node]));
   const edges = (file.edges ?? []).map((edge) => {
     const handle = edge.targetHandle ?? "ch0";
+    const family = byId.get(edge.source)?.data.family ?? "TOP";
     return {
       id: `${edge.source}-${edge.target}-${handle}`,
       source: edge.source,
       target: edge.target,
       sourceHandle: "out",
       targetHandle: handle,
-      style: { stroke: wire, strokeWidth: 1.8 },
+      style: wireStyle(family),
     };
   });
   return { nodes, edges, viewer };
@@ -49,10 +57,19 @@ export function buildGraph(file: GraphFile): { nodes: PNode[]; edges: Edge[]; vi
 function toNode(node: GraphNode, selected: boolean): PNode {
   const position = { x: node.x ?? 0, y: node.y ?? 0 };
   if (node.kind === "audio") {
-    return { id: node.id, type: "top", position, selected, data: { kind: "audio", family: "TOP", label: node.label ?? node.id } };
+    const data: AudioData = { kind: "audio", family: "TOP", label: node.label ?? node.id, bypass: false };
+    return { id: node.id, type: "top", position, selected, data };
   }
   if (node.kind === "out") {
-    return { id: node.id, type: "top", position, selected, data: { kind: "out", family: "TOP", label: node.label ?? node.id } };
+    const data: OutData = { kind: "out", family: "TOP", label: node.label ?? node.id, bypass: false };
+    return { id: node.id, type: "top", position, selected, data };
+  }
+  if (node.kind === "op") {
+    if (!node.family || !FAMILIES.has(node.family) || !node.type) throw new Error(`operator ${node.id} needs a family and type`);
+    const data = createOpData(node.family, node.type, node.label ?? node.id);
+    data.bypass = node.bypass ?? false;
+    data.pars = applyParOverrides(data.pars, node.pars);
+    return { id: node.id, type: rfType(node.family), position, selected, data };
   }
   if (node.kind !== "shader") throw new Error(`unknown node kind on ${node.id}`);
   const source = node.source ?? lookupShader(node.shader ?? "");
@@ -67,6 +84,7 @@ function toNode(node: GraphNode, selected: boolean): PNode {
     error: null,
     channels: parsed.channels,
     feedback: parsed.feedback,
+    bypass: node.bypass ?? false,
     params: applyOverrides(parsed.params, node.params),
   };
   return { id: node.id, type: "top", position, selected, data };

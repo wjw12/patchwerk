@@ -11,11 +11,23 @@ import {
 } from "@xyflow/react";
 import { create } from "zustand";
 import { demoGraph } from "./demo";
+import { rfType, wireStyle, type Family } from "./family";
 import { TEMPLATE } from "./engine/sources";
 import { parseShader, type ShaderParam } from "./engine/wrap";
+import {
+  applyParOverrides,
+  createOpData,
+  hasOutlet,
+  inletHandles,
+  type InletSource,
+  type OpData,
+  type Par,
+  type ParMode,
+  type ParOverride,
+} from "./ops/catalog";
 import { readSession } from "./session";
 
-export type Family = "TOP" | "CHOP";
+export type { Family, OpData, Par, ParMode };
 
 export interface ShaderData {
   [key: string]: unknown;
@@ -28,6 +40,7 @@ export interface ShaderData {
   error: string | null;
   channels: number[];
   feedback: boolean;
+  bypass: boolean;
   params: ShaderParam[];
 }
 
@@ -36,6 +49,7 @@ export interface AudioData {
   kind: "audio";
   family: Family;
   label: string;
+  bypass: boolean;
 }
 
 export interface OutData {
@@ -43,18 +57,21 @@ export interface OutData {
   kind: "out";
   family: Family;
   label: string;
+  bypass: boolean;
 }
 
-export type NodeData = ShaderData | AudioData | OutData;
-export type PNode = Node<NodeData, "top">;
+export type NodeData = ShaderData | AudioData | OutData | OpData;
+export type RfKind = "top" | "chop" | "pop" | "mat" | "comp";
+export type PNode = Node<NodeData, RfKind>;
 
-const KEY = "patchwerk.graph.v2";
-const WIRE = "#8d7cff";
+const KEY = "patchwerk.graph.v3";
 
 export interface GraphState {
   nodes: PNode[];
   edges: Edge[];
   editorOpen: boolean;
+  playing: boolean;
+  palette: { x: number; y: number } | null;
   mic: "off" | "live" | "denied";
   gpuError: string | null;
   onNodesChange: (changes: NodeChange<PNode>[]) => void;
@@ -62,21 +79,39 @@ export interface GraphState {
   onConnect: OnConnect;
   updateDraft: (id: string, draft: string) => void;
   setParam: (id: string, name: string, value: number | [number, number, number]) => void;
+  setOpPar: (id: string, name: string, patch: ParOverride & { text?: string; menu?: string }) => void;
+  setBypass: (id: string, bypass: boolean) => void;
+  rename: (id: string, label: string) => void;
+  setCookStatus: (id: string, status: "live" | "error", error: string | null) => void;
   applyCompile: (id: string, patch: { status: "live" | "error"; error: string | null; committed?: string }) => void;
   setEditorOpen: (open: boolean) => void;
+  setPlaying: (playing: boolean) => void;
+  openPalette: (x: number, y: number) => void;
+  closePalette: () => void;
   setMic: (mic: GraphState["mic"]) => void;
   setGpuError: (message: string | null) => void;
-  addShader: () => void;
+  addOp: (family: Family, type: string, position?: { x: number; y: number }) => void;
   save: () => void;
   load: () => boolean;
   reset: () => void;
   replace: (nodes: PNode[], edges: Edge[]) => void;
 }
 
-function channelsOf(node: PNode): number[] {
-  if (node.data.kind === "out") return [0];
-  if (node.data.kind === "shader") return node.data.channels;
-  return [];
+export function nodeInlets(data: NodeData): string[] {
+  return inletHandles(inletSource(data));
+}
+
+export function nodeOutlet(data: NodeData): boolean {
+  return hasOutlet(inletSource(data));
+}
+
+function inletSource(data: NodeData): InletSource {
+  return {
+    kind: data.kind,
+    family: data.family,
+    type: data.kind === "op" ? data.type : undefined,
+    channels: data.kind === "shader" ? data.channels : undefined,
+  };
 }
 
 export function isValidConnection(connection: Edge | Connection): boolean {
@@ -88,9 +123,9 @@ export function isValidConnection(connection: Edge | Connection): boolean {
   const target = nodes.find((node) => node.id === connection.target);
   if (!source || !target) return false;
   if (source.data.family !== target.data.family) return false;
+  if (!nodeOutlet(source.data)) return false;
   const handle = connection.targetHandle ?? "";
-  const channel = Number(handle.replace("ch", ""));
-  if (!handle.startsWith("ch") || !channelsOf(target).includes(channel)) return false;
+  if (!nodeInlets(target.data).includes(handle)) return false;
   const occupied = edges.some(
     (edge) => edge.target === connection.target && edge.targetHandle === handle && edge.source !== connection.source,
   );
@@ -146,16 +181,18 @@ const initial = initialGraph();
 export const useGraph = create<GraphState>((set, get) => ({
   nodes: initial.nodes,
   edges: initial.edges,
-  editorOpen: true,
+  editorOpen: false,
+  playing: true,
+  palette: null,
   mic: "off",
   gpuError: null,
   onNodesChange: (changes) => set({ nodes: applyNodeChanges(changes, get().nodes) }),
   onEdgesChange: (changes) => set({ edges: applyEdgeChanges(changes, get().edges) }),
   onConnect: (connection) => {
     if (!isValidConnection(connection)) return;
-    set({
-      edges: addEdge({ ...connection, style: { stroke: WIRE, strokeWidth: 1.8 } }, get().edges),
-    });
+    const source = get().nodes.find((node) => node.id === connection.source);
+    const style = wireStyle(source?.data.family ?? "TOP");
+    set({ edges: addEdge({ ...connection, style }, get().edges) });
   },
   updateDraft: (id, draft) => {
     const parsed = parseShader(draft);
@@ -194,6 +231,38 @@ export const useGraph = create<GraphState>((set, get) => ({
         };
       }),
     })),
+  setOpPar: (id, name, patch) =>
+    set((state) => ({
+      nodes: state.nodes.map((node) => {
+        if (node.id !== id || node.data.kind !== "op") return node;
+        return {
+          ...node,
+          data: {
+            ...node.data,
+            pars: node.data.pars.map((par) => applyOne(par, name, patch)),
+          },
+        };
+      }),
+    })),
+  setBypass: (id, bypass) =>
+    set((state) => ({
+      nodes: state.nodes.map((node) => (node.id === id ? { ...node, data: { ...node.data, bypass } } : node)),
+    })),
+  rename: (id, label) => {
+    const next = label.trim();
+    if (!next) return;
+    set((state) => ({
+      nodes: state.nodes.map((node) => (node.id === id ? { ...node, data: { ...node.data, label: next } } : node)),
+    }));
+  },
+  setCookStatus: (id, status, error) =>
+    set((state) => ({
+      nodes: state.nodes.map((node) => {
+        if (node.id !== id || node.data.kind !== "op") return node;
+        if (node.data.status === status && node.data.error === error) return node;
+        return { ...node, data: { ...node.data, status, error } };
+      }),
+    })),
   applyCompile: (id, patch) =>
     set((state) => ({
       nodes: state.nodes.map((node) => {
@@ -210,31 +279,18 @@ export const useGraph = create<GraphState>((set, get) => ({
       }),
     })),
   setEditorOpen: (open) => set({ editorOpen: open }),
+  setPlaying: (playing) => set({ playing }),
+  openPalette: (x, y) => set({ palette: { x, y } }),
+  closePalette: () => set({ palette: null }),
   setMic: (mic) => set({ mic }),
   setGpuError: (message) => set({ gpuError: message }),
-  addShader: () => {
-    const parsed = parseShader(TEMPLATE);
-    const id = `s${crypto.randomUUID().slice(0, 6)}`;
-    const node: PNode = {
-      id,
-      type: "top",
-      position: { x: 120 + Math.random() * 180, y: 80 + Math.random() * 140 },
-      selected: true,
-      data: {
-        kind: "shader",
-        family: "TOP",
-        label: id,
-        draft: TEMPLATE,
-        committed: null,
-        status: "idle",
-        error: null,
-        channels: parsed.channels,
-        feedback: parsed.feedback,
-        params: parsed.params,
-      },
-    };
+  addOp: (family, type, position) => {
+    const at = position ?? { x: 120 + Math.random() * 180, y: 80 + Math.random() * 140 };
+    const id = `${type.slice(0, 4)}${crypto.randomUUID().slice(0, 4)}`;
+    const node = makeNode(id, family, type, at);
     set((state) => ({
-      editorOpen: true,
+      palette: null,
+      editorOpen: type === "shader" ? true : state.editorOpen,
       nodes: [...state.nodes.map((item) => ({ ...item, selected: false })), node],
     }));
   },
@@ -254,3 +310,57 @@ export const useGraph = create<GraphState>((set, get) => ({
   },
   replace: (nodes, edges) => set({ nodes, edges }),
 }));
+
+function applyOne(par: Par, name: string, patch: ParOverride & { text?: string; menu?: string }): Par {
+  if (par.name !== name) return par;
+  if (par.kind === "menu") {
+    const value = typeof patch === "string" ? patch : patch.menu;
+    if (value && par.options.includes(value)) return { ...par, value };
+    return par;
+  }
+  if (par.kind === "text") {
+    const value = typeof patch === "string" ? patch : patch.text;
+    if (typeof value === "string") return { ...par, value };
+    return par;
+  }
+  if (typeof patch === "number") return { ...par, mode: "constant", value: patch };
+  if (typeof patch === "string") return par;
+  const next = { ...par };
+  if (patch.mode) next.mode = patch.mode;
+  if (typeof patch.value === "number" && Number.isFinite(patch.value)) next.value = patch.value;
+  if (typeof patch.expr === "string") next.expr = patch.expr;
+  return next;
+}
+
+function makeNode(id: string, family: Family, type: string, position: { x: number; y: number }): PNode {
+  const selected = true;
+  if (type === "shader" && family === "TOP") {
+    const parsed = parseShader(TEMPLATE);
+    const data: ShaderData = {
+      kind: "shader",
+      family: "TOP",
+      label: id,
+      draft: TEMPLATE,
+      committed: null,
+      status: "idle",
+      error: null,
+      channels: parsed.channels,
+      feedback: parsed.feedback,
+      bypass: false,
+      params: parsed.params,
+    };
+    return { id, type: "top", position, selected, data };
+  }
+  if (type === "audio" && family === "TOP") {
+    return { id, type: "top", position, selected, data: { kind: "audio", family: "TOP", label: id, bypass: false } };
+  }
+  if (type === "out" && family === "TOP") {
+    return { id, type: "top", position, selected, data: { kind: "out", family: "TOP", label: id, bypass: false } };
+  }
+  const data = createOpData(family, type, id);
+  return { id, type: rfType(family), position, selected, data };
+}
+
+export function patchPars(pars: Par[], overrides: Record<string, ParOverride> | undefined): Par[] {
+  return applyParOverrides(pars, overrides);
+}

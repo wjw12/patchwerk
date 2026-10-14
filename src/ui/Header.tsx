@@ -1,12 +1,13 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { engine } from "../engine/engine";
 import { roomUrl } from "../room";
 import { useGraph } from "../store";
 import { useSync } from "../sync";
+import { Playbar } from "./Playbar";
 
 export function Header() {
   const gpuError = useGraph((state) => state.gpuError);
-  const addShader = useGraph((state) => state.addShader);
+  const openPalette = useGraph((state) => state.openPalette);
   const save = useGraph((state) => state.save);
   const load = useGraph((state) => state.load);
   const reset = useGraph((state) => state.reset);
@@ -14,11 +15,20 @@ export function Header() {
   const status = useSync((state) => state.status);
   const peers = useSync((state) => state.peers);
   const [copied, setCopied] = useState(false);
+  const hud = useRef<HTMLSpanElement>(null);
+
+  useEffect(() => {
+    const node = hud.current;
+    if (!node) return;
+    if (gpuError) node.textContent = gpuError;
+    else if (!node.textContent) node.textContent = "booting";
+  }, [gpuError]);
 
   return (
     <header className="topbar">
       <strong>patchwerk</strong>
-      <span id="hud">{gpuError ?? "booting"}</span>
+      <Playbar />
+      <span id="hud" ref={hud} />
       {room && (
         <div className={`room is-${status}`}>
           <i />
@@ -42,8 +52,8 @@ export function Header() {
         </div>
       )}
       <div className="topbar-actions">
-        <button type="button" onClick={addShader}>
-          shader
+        <button type="button" onClick={() => openPalette(window.innerWidth / 2, 88)}>
+          add
         </button>
         <button
           type="button"

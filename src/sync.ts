@@ -16,23 +16,27 @@ import { create } from "zustand";
 import { engine } from "./engine/engine";
 import { parseShader, type ShaderParam } from "./engine/wrap";
 import { identity } from "./room";
-import { mergeParams, useGraph, type GraphState, type NodeData, type PNode, type ShaderData } from "./store";
+import { wireStyle, type Family } from "./family";
+import { createOpData, type OpData, type Par } from "./ops/catalog";
+import { mergeParams, nodeInlets, nodeOutlet, useGraph, type GraphState, type NodeData, type PNode, type ShaderData } from "./store";
 
 const LOCAL = Symbol("local");
-const WIRE = "#8d7cff";
 
 interface NodeRec {
   kind: NodeData["kind"];
+  family?: Family;
+  type?: string;
   label: string;
   x: number;
   y: number;
+  bypass?: boolean;
 }
 interface EdgeRec {
   source: string;
   target: string;
   targetHandle: string;
 }
-type ParamValue = number | [number, number, number];
+type ParamValue = number | [number, number, number] | string;
 
 export interface Cursor {
   x: number;
@@ -136,8 +140,34 @@ function push(state: GraphState, prev: GraphState): void {
 function writeNode(node: PNode): void {
   const rec = nodesMap.get(node.id);
   const { x, y } = node.position;
-  if (!rec || rec.kind !== node.data.kind || rec.label !== node.data.label || rec.x !== x || rec.y !== y) {
-    nodesMap.set(node.id, { kind: node.data.kind, label: node.data.label, x, y });
+  const next: NodeRec = {
+    kind: node.data.kind,
+    family: node.data.family,
+    type: node.data.kind === "op" ? node.data.type : undefined,
+    label: node.data.label,
+    x,
+    y,
+    bypass: node.data.bypass,
+  };
+  if (
+    !rec ||
+    rec.kind !== next.kind ||
+    rec.family !== next.family ||
+    rec.type !== next.type ||
+    rec.label !== next.label ||
+    rec.x !== x ||
+    rec.y !== y ||
+    rec.bypass !== next.bypass
+  ) {
+    nodesMap.set(node.id, next);
+  }
+  if (node.data.kind === "op") {
+    for (const par of node.data.pars) {
+      const key = `${node.id}/${par.name}`;
+      const encoded = encodeOpPar(par);
+      if (paramsMap.get(key) !== encoded) paramsMap.set(key, encoded);
+    }
+    return;
   }
   if (node.data.kind !== "shader") return;
   const text = codeMap.get(node.id);
@@ -199,11 +229,65 @@ function pull(): void {
   }
 }
 
+function familyOf(rec: NodeRec): Family {
+  if (rec.family === "POP" || rec.family === "CHOP" || rec.family === "TOP" || rec.family === "MAT" || rec.family === "COMP") return rec.family;
+  return "TOP";
+}
+
+function encodeOpPar(par: Par): string {
+  if (par.kind === "number") return `n:${par.mode}:${par.value}:${encodeURIComponent(par.expr)}`;
+  if (par.kind === "menu") return `m:${encodeURIComponent(par.value)}`;
+  return `t:${encodeURIComponent(par.value)}`;
+}
+
+function decodePars(pars: Par[], id: string): Par[] {
+  return pars.map((par) => {
+    const raw = paramsMap.get(`${id}/${par.name}`);
+    if (typeof raw !== "string") return par;
+    if (raw.startsWith("n:") && par.kind === "number") {
+      const body = raw.slice(2);
+      const modeEnd = body.indexOf(":");
+      const rest = body.slice(modeEnd + 1);
+      const valueEnd = rest.indexOf(":");
+      const value = Number(rest.slice(0, valueEnd));
+      return {
+        ...par,
+        mode: body.slice(0, modeEnd) === "expression" ? "expression" : "constant",
+        value: Number.isFinite(value) ? value : par.value,
+        expr: decodeURIComponent(rest.slice(valueEnd + 1)),
+      };
+    }
+    if (raw.startsWith("m:") && par.kind === "menu") {
+      const value = decodeURIComponent(raw.slice(2));
+      return par.options.includes(value) ? { ...par, value } : par;
+    }
+    if (raw.startsWith("t:") && par.kind === "text") return { ...par, value: decodeURIComponent(raw.slice(2)) };
+    return par;
+  });
+}
+
 function buildNode(id: string, rec: NodeRec, old: PNode | undefined): PNode {
   // Keep the local position while this client is mid-drag; the drop writes the final one.
   const position = old?.dragging ? old.position : { x: rec.x, y: rec.y };
   const base = { id, type: "top" as const, position, selected: old?.selected ?? false, measured: old?.measured };
-  if (rec.kind !== "shader") return { ...base, data: { kind: rec.kind, family: "TOP", label: rec.label } };
+  if (rec.kind === "op" && rec.type) {
+    let data: OpData;
+    try {
+      data = createOpData(familyOf(rec), rec.type, rec.label);
+    } catch {
+      return { ...base, data: { kind: "out", family: "TOP", label: rec.label, bypass: false } };
+    }
+    data.bypass = rec.bypass ?? false;
+    data.pars = decodePars(data.pars, id);
+    if (old?.data.kind === "op" && old.data.type === rec.type) {
+      data.status = old.data.status;
+      data.error = old.data.error;
+    }
+    const opType = familyOf(rec) === "CHOP" ? "chop" : familyOf(rec) === "POP" ? "pop" : familyOf(rec) === "MAT" ? "mat" : familyOf(rec) === "COMP" ? "comp" : "top";
+    return { ...base, type: opType, data };
+  }
+  if (rec.kind === "audio") return { ...base, data: { kind: "audio", family: "TOP", label: rec.label, bypass: rec.bypass ?? false } };
+  if (rec.kind !== "shader") return { ...base, data: { kind: "out", family: "TOP", label: rec.label, bypass: rec.bypass ?? false } };
 
   const draft = codeMap.get(id)?.toString() ?? "";
   const was = old?.data.kind === "shader" ? old.data : null;
@@ -225,6 +309,7 @@ function buildNode(id: string, rec: NodeRec, old: PNode | undefined): PNode {
     error: was?.error ?? null,
     channels: parsed ? parsed.channels : (was?.channels ?? []),
     feedback: parsed ? parsed.feedback : (was?.feedback ?? false),
+    bypass: rec.bypass ?? was?.bypass ?? false,
     params,
   };
   return { ...base, data };
@@ -236,19 +321,20 @@ function buildNode(id: string, rec: NodeRec, old: PNode | undefined): PNode {
  */
 function pruneEdges(nodes: PNode[]): Edge[] {
   const byId = new Map(nodes.map((node) => [node.id, node]));
-  const open = (node: PNode): number[] => (node.data.kind === "out" ? [0] : node.data.kind === "shader" ? node.data.channels : []);
   const kept: Edge[] = [];
   const taken = new Set<string>();
   const drop: string[] = [];
   const entries = [...edgesMap.entries()].sort(([a], [b]) => (a < b ? -1 : 1));
   for (const [id, rec] of entries) {
+    const source = byId.get(rec.source);
     const target = byId.get(rec.target);
-    const channel = Number(rec.targetHandle.replace("ch", ""));
     const slot = `${rec.target}:${rec.targetHandle}`;
     const bad =
-      !byId.has(rec.source) ||
+      !source ||
       !target ||
-      !open(target).includes(channel) ||
+      source.data.family !== target.data.family ||
+      !nodeOutlet(source.data) ||
+      !nodeInlets(target.data).includes(rec.targetHandle) ||
       taken.has(slot) ||
       reaches(rec.target, rec.source, kept);
     if (bad) {
@@ -256,7 +342,14 @@ function pruneEdges(nodes: PNode[]): Edge[] {
       continue;
     }
     taken.add(slot);
-    kept.push({ id, source: rec.source, target: rec.target, sourceHandle: "out", targetHandle: rec.targetHandle, style: { stroke: WIRE, strokeWidth: 1.8 } });
+    kept.push({
+      id,
+      source: rec.source,
+      target: rec.target,
+      sourceHandle: "out",
+      targetHandle: rec.targetHandle,
+      style: wireStyle(source.data.family),
+    });
   }
   if (drop.length) doc.transact(() => drop.forEach((id) => edgesMap.delete(id)), LOCAL);
   return kept;
@@ -277,7 +370,12 @@ function reaches(from: string, to: string, edges: Edge[]): boolean {
 
 function sameNode(a: PNode, b: PNode): boolean {
   if (a.position.x !== b.position.x || a.position.y !== b.position.y || a.selected !== b.selected) return false;
-  if (a.data.kind !== b.data.kind || a.data.label !== b.data.label) return false;
+  if (a.data.kind !== b.data.kind || a.data.label !== b.data.label || a.data.bypass !== b.data.bypass) return false;
+  if (a.data.kind === "op" && b.data.kind === "op") {
+    if (a.data.type !== b.data.type || a.data.family !== b.data.family || a.data.pars.length !== b.data.pars.length) return false;
+    const theirs = b.data.pars;
+    return a.data.pars.every((par, index) => samePar(par, theirs[index]));
+  }
   if (a.data.kind !== "shader" || b.data.kind !== "shader") return true;
   if (a.data.draft !== b.data.draft || a.data.committed !== b.data.committed) return false;
   const theirs = b.data.params;
@@ -288,7 +386,16 @@ function sameNode(a: PNode, b: PNode): boolean {
   });
 }
 
+function samePar(a: Par | undefined, b: Par | undefined): boolean {
+  if (!a || !b || a.kind !== b.kind || a.name !== b.name) return false;
+  if (a.kind === "number" && b.kind === "number") return a.mode === b.mode && a.value === b.value && a.expr === b.expr;
+  if (a.kind === "menu" && b.kind === "menu") return a.value === b.value;
+  if (a.kind === "text" && b.kind === "text") return a.value === b.value;
+  return false;
+}
+
 function sameValue(a: ParamValue | undefined, b: ParamValue): boolean {
+  if (typeof a === "string" || typeof b === "string") return a === b;
   if (typeof a === "number" || typeof b === "number") return a === b;
   if (!a) return false;
   return a.length === b.length && a.every((v, i) => v === b[i]);

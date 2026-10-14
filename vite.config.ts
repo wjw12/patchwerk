@@ -11,7 +11,11 @@ function serveGraphs(): Plugin {
     name: "serve-graphs",
     configureServer(server) {
       server.middlewares.use((req, res, next) => {
-        const url = req.url?.split("?")[0] ?? "";
+        const rawUrl = req.url ?? "";
+        // Vite turns `import cloud.json` into a module URL with a query. Leave those
+        // alone; this middleware only serves the raw files fetched by `?graph=`.
+        if (rawUrl.includes("?")) return next();
+        const url = rawUrl;
         if (!url.startsWith("/tests/graphs/")) return next();
         const name = path.basename(url);
         if (!/^[a-z0-9-]+\.json$/.test(name)) return next();

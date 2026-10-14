@@ -15,6 +15,7 @@ export function App() {
   const viewer = useRef(readSession().viewer);
   const [drawer, setDrawer] = useState(260);
   const [readyToCook, setReadyToCook] = useState(() => readSession().graph == null);
+  const shaderSelected = useGraph((state) => state.nodes.some((node) => node.selected && node.data.kind === "shader"));
 
   useEffect(() => {
     const session = readSession();
@@ -52,7 +53,6 @@ export function App() {
   return (
     <div className="app">
       <canvas ref={gl} className="gl-host" />
-      <div id="stats">—</div>
       <Header />
       <div className="stage">
         <Flow />
@@ -61,7 +61,7 @@ export function App() {
           <Params />
         </aside>
       </div>
-      <Editor height={drawer} onResize={setDrawer} />
+      {shaderSelected && <Editor height={drawer} onResize={setDrawer} />}
     </div>
   );
 }

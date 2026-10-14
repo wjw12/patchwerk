@@ -18,4 +18,5 @@ export const cases: VisualCase[] = [
   { name: "template", graph: "/tests/graphs/template.json", t: 0.8, frame: 1 },
   { name: "melt-clear", graph: "/tests/graphs/melt.json", t: 0.5, frame: 1 },
   { name: "melt-feedback", graph: "/tests/graphs/melt.json", t: 2, frame: 120 },
+  { name: "cloud", graph: "/tests/graphs/cloud.json", t: 2, frame: 120 },
 ];

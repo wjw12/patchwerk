@@ -8,6 +8,7 @@
     "noEmit": true,
     "isolatedModules": true,
     "skipLibCheck": true,
+    "resolveJsonModule": true,
     "lib": ["ES2022", "DOM", "DOM.Iterable"],
     "useDefineForClassFields": true
   },

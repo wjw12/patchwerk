@@ -4,7 +4,8 @@ import { useGraph } from "../store";
 
 export function Viewer() {
   const ref = useRef<HTMLCanvasElement>(null);
-  const label = useGraph((state) => state.nodes.find((node) => node.selected)?.data.label ?? "out");
+  const node = useGraph((state) => state.nodes.find((item) => item.selected));
+  const label = node?.data.label ?? "out";
   const mic = useGraph((state) => state.mic);
 
   useEffect(() => {
@@ -19,9 +20,11 @@ export function Viewer() {
       <header>
         <span>viewer</span>
         <b>{label}</b>
-        <button type="button" onClick={() => void engine.enableMic()}>
-          {mic === "live" ? "mic live" : mic === "denied" ? "mic blocked" : "enable mic"}
-        </button>
+        {node?.data.kind === "audio" && (
+          <button type="button" onClick={() => void engine.enableMic()}>
+            {mic === "live" ? "mic live" : mic === "denied" ? "mic blocked" : "enable mic"}
+          </button>
+        )}
       </header>
       <canvas ref={ref} />
     </section>
