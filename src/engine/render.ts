@@ -70,6 +70,13 @@ export class ImageOps {
     return { tex, w: target.width, h: target.height };
   }
 
+  /** Clears a node's image to black, for a TOP that cannot cook. */
+  blank(id: string): { tex: WebGLTexture; w: number; h: number } {
+    const target = this.nodeTarget(id, COOK_W, COOK_H);
+    this.clear(target);
+    return { tex: target.attachments[0] as WebGLTexture, w: COOK_W, h: COOK_H };
+  }
+
   render(id: string, cloud: CloudDraw | null): { tex: WebGLTexture; w: number; h: number } {
     const target = this.nodeTarget(id, COOK_W, COOK_H);
     if (!cloud || cloud.n < 1) {

@@ -607,6 +607,8 @@ export class Engine {
       else if (node.data.family === "POP") cookError = this.cookPopNode(node, nodes, edges, resolved);
       else if (node.data.type === "render") cookError = this.cookRenderNode(node, nodes, resolved);
       else if (node.data.type === "bloom") cookError = this.cookBloomNode(node, nodes, edges, resolved);
+      // A TOP that cannot cook shows black, not its last good image.
+      if (cookError && node.data.family === "TOP" && this.imageOps) this.images.set(node.id, this.imageOps.blank(node.id));
       const error = [parError, cookError].filter((item) => item).join("\n") || null;
       this.note(node, error);
     }
