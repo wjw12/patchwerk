@@ -1066,8 +1066,22 @@ export class Engine {
     if (!output) return;
     const size = this.viewerPixels();
     fitCanvas(dest, size);
-    this.blitTexture(output.tex, size.w, size.h);
-    ctx.drawImage(canvas, 0, gl.drawingBufferHeight - size.h, size.w, size.h, 0, 0, size.w, size.h);
+    // Letterbox so a 16:9 cook keeps its shape in any panel. The audio strip (512×2) still stretches.
+    let w = size.w;
+    let h = size.h;
+    if (output.h > 2) {
+      const scale = Math.min(size.w / output.w, size.h / output.h);
+      w = Math.max(2, Math.round(output.w * scale));
+      h = Math.max(2, Math.round(output.h * scale));
+    }
+    const x = Math.floor((size.w - w) / 2);
+    const y = Math.floor((size.h - h) / 2);
+    this.blitTexture(output.tex, w, h);
+    if (w !== size.w || h !== size.h) {
+      ctx.fillStyle = "#05060a";
+      ctx.fillRect(0, 0, size.w, size.h);
+    }
+    ctx.drawImage(canvas, 0, gl.drawingBufferHeight - h, w, h, x, y, w, h);
   }
 
   private blitTexture(tex: WebGLTexture, w: number, h: number): void {
