@@ -43,7 +43,8 @@ More POP generators, a GLSL MAT, and DAT text for shader bodies. Networking stay
 
 Use bun: `bun install`, `bun run dev`, `bun test`.
 Rooms need the server: `bun install --cwd server` once, then `bun run server` (port 3000, rooms in `server/data/rooms`). The client reads `VITE_SYNC_URL` (see `.env.example`); without it it uses `ws://<page host>:3000`.
-`bun run check:shaders` compiles every `src/ops/**/*.glsl` in headless Edge (SwiftShader).
+How to test, and which tier to reach for: [docs/testing.md](docs/testing.md). Manual pass over the app: [docs/walkthrough.md](docs/walkthrough.md).
+`bun run check:shaders` compiles every `src/ops/**/*.glsl` in headless Chromium (SwiftShader).
 `bun run test:visual` compares one cooked frame to `tests/golden`. Update with `bun run test:visual -- --update <name>` only when the picture change is intentional.
 `bun run test:room` opens two tabs in one room and checks they converge. Needs `bun run dev` and `bun run server`.
 Do not write unit tests unless human instructs.
