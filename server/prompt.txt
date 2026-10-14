@@ -7,7 +7,7 @@ A patch is a dataflow graph of operators. Operators belong to a family:
 - CHOP: one number per frame on the CPU (lfo, pattern, audioband, math, null). Its value is read by expressions: op('label')['chan1']. chan1 is the only channel.
 - POP: point clouds on the GPU, one texel per point, at most 4096 points.
 - MAT: how a POP is drawn. point: additive glowing sprites that ignore lights. phong: opaque lit spheres with depth, shaded by light COMPs.
-- COMP: cam (camera), light (point, distant or ambient light for phong), geo (binds a pop, a mat and a cam).
+- COMP: cam (camera), light (point, distant, cone or ambient light for phong), geo (binds a pop, a mat and a cam).
 
 The full list of operators, every parameter with its default and slider range, and what the parameters mean is under # Operators below. Use exactly those type and parameter names; anything else is refused.
 
