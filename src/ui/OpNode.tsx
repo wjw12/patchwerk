@@ -38,7 +38,8 @@ export function OpNode({ id, data, selected }: NodeProps<PNode>) {
   const inletKey = inlets.join(" ");
   useEffect(() => updateInternals(id), [id, inletKey, updateInternals]);
   const outlet = nodeOutlet(data);
-  const bad = (data.kind === "shader" || data.kind === "op") && data.status === "error";
+  const error = useSettledError((data.kind === "shader" || data.kind === "op") && data.status === "error" ? (data.error ?? "") : null);
+  const bad = error !== null;
   const live = data.kind !== "shader" && data.kind !== "op" ? true : data.status === "live";
   const typeName = data.kind === "op" ? data.type : data.kind;
 
@@ -136,7 +137,21 @@ export function OpNode({ id, data, selected }: NodeProps<PNode>) {
         </em>
       ))}
       {outlet && <Handle type="source" id="out" position={Position.Right} style={{ background: tone.wire }} />}
-      {bad && "error" in data && data.error && <p>{data.error.split("\n")[0]}</p>}
+      {error && <p>{error.split("\n")[0]}</p>}
     </div>
   );
+}
+
+/** An error shows once it has held for a moment, so typing an expression or shader doesn't flash red. It clears at once. */
+function useSettledError(error: string | null, wait = 400): string | null {
+  const [shown, setShown] = useState(error);
+  useEffect(() => {
+    if (error === null) {
+      setShown(null);
+      return;
+    }
+    const timer = window.setTimeout(() => setShown(error), wait);
+    return () => window.clearTimeout(timer);
+  }, [error, wait]);
+  return shown;
 }
