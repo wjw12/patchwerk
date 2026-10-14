@@ -2,7 +2,7 @@ import type { Edge } from "@xyflow/react";
 import { rfType, wireStyle, type Family } from "./family";
 import { parseShader, patchShaderParam, type ShaderParam } from "./engine/wrap";
 import { applyParOverrides, createOpData, type ParOverride } from "./ops/catalog";
-import type { AudioData, OutData, PNode, ShaderData } from "./store";
+import type { AudioData, OutData, PNode, ShaderData, WebcamData } from "./store";
 
 const shaders = import.meta.glob("./ops/*.glsl", {
   query: "?raw",
@@ -56,8 +56,8 @@ export function buildGraph(file: GraphFile): { nodes: PNode[]; edges: Edge[]; vi
 
 function toNode(node: GraphNode, selected: boolean): PNode {
   const position = { x: node.x ?? 0, y: node.y ?? 0 };
-  if (node.kind === "audio") {
-    const data: AudioData = { kind: "audio", family: "TOP", label: node.label ?? node.id, bypass: node.bypass ?? false };
+  if (node.kind === "audio" || node.kind === "webcam") {
+    const data: AudioData | WebcamData = { kind: node.kind, family: "TOP", label: node.label ?? node.id, bypass: node.bypass ?? false };
     return { id: node.id, type: "top", position, selected, data };
   }
   if (node.kind === "out") {

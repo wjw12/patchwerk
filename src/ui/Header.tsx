@@ -5,6 +5,7 @@ import { useGraph } from "../store";
 import { redo, undo, useHistory, useSync } from "../sync";
 import { exportGraph, importFile } from "./graph-io";
 import { AudioInput } from "./AudioInput";
+import { CameraInput } from "./CameraInput";
 import { Playbar } from "./Playbar";
 import { FileButton, TemplatePicker } from "./Templates";
 
@@ -62,6 +63,7 @@ export function Header() {
       </strong>
       <Playbar />
       <AudioInput />
+      <CameraInput />
       <span id="hud" ref={hud} />
       {room && (
         <div className={`room is-${status}`}>

@@ -60,7 +60,7 @@ function patchwerkTools(call: Call) {
       "Add an operator and return the label actually assigned (labels are made unique, so `noise` may become `noise1`). If `after` is given, the new node is spliced in after it: after.out feeds the new node's first inlet, and whatever after.out used to feed is now fed by the new node, so inserting an effect before `out` is one call. For a shader TOP pass `code` so it has an inlet (the template has none); the code is compiled before wiring and compile errors are returned the same way as write_shader.",
       {
         family: z.enum(["TOP", "CHOP", "POP", "MAT", "COMP"]),
-        type: z.string().describe('an operator type from the catalog, plus TOP "shader" | "audio" | "out"'),
+        type: z.string().describe('an operator type from the catalog, plus TOP "shader" | "audio" | "webcam" | "out"'),
         label: z.string().optional().describe("wanted label; made unique"),
         after: z.string().optional().describe("same-family node to splice this one after"),
         code: z.string().optional().describe("shader TOP only: the complete shader source"),

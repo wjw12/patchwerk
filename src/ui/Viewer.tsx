@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useAudio } from "../audio";
+import { useCamera } from "../camera";
 import { engine } from "../engine/engine";
 import { useGraph } from "../store";
 
@@ -11,6 +12,7 @@ export function Viewer() {
   const source = useAudio((state) => state.source);
   const file = useAudio((state) => state.file);
   const listens = node?.data.kind === "audio" || (node?.data.kind === "op" && node.data.type === "audioband");
+  const camera = useCamera((state) => state.status);
   const [full, setFull] = useState(false);
 
   useEffect(() => {
@@ -52,6 +54,11 @@ export function Viewer() {
         {listens && (
           <em className="audio-hint" title="Pick the input in the header. It is this tab's own; others hear theirs.">
             hears {source === "off" ? "the test signal" : source === "mic" ? "your mic" : (file ?? "a file")}
+          </em>
+        )}
+        {node?.data.kind === "webcam" && (
+          <em className="audio-hint" title="Turn the camera on in the header. It is this tab's own; others see theirs.">
+            shows {camera === "live" ? "your camera" : "the test picture"}
           </em>
         )}
         <span className="viewer-actions">

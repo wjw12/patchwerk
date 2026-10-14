@@ -1,0 +1,17 @@
+{
+  "viewer": "out",
+  "nodes": [
+    { "id": "cam", "kind": "webcam", "label": "cam", "x": 40, "y": 60 },
+    { "id": "audio", "kind": "audio", "label": "audio", "x": 40, "y": 300 },
+    { "id": "echo", "kind": "shader", "label": "echo", "shader": "selfie-echo.glsl", "x": 360, "y": 60 },
+    { "id": "look", "kind": "shader", "label": "look", "shader": "selfie-look.glsl", "x": 680, "y": 60 },
+    { "id": "out", "kind": "out", "label": "out", "x": 1000, "y": 60 }
+  ],
+  "edges": [
+    { "source": "cam", "target": "echo", "targetHandle": "ch0" },
+    { "source": "echo", "target": "look", "targetHandle": "ch0" },
+    { "source": "cam", "target": "look", "targetHandle": "ch1" },
+    { "source": "audio", "target": "look", "targetHandle": "ch2" },
+    { "source": "look", "target": "out", "targetHandle": "ch0" }
+  ]
+}

@@ -234,7 +234,7 @@ function addNode(input: Input): string {
   if (after) {
     if (after.data.family !== family) throw new ToolError(`after must be a ${family} node; ${after.data.label} is ${kindName(after.data)}`);
     if (!nodeOutlet(after.data)) throw new ToolError(`${after.data.label} has no outlet, so nothing can follow it; leave out after`);
-    const kind = family === "TOP" && (type === "shader" || type === "audio" || type === "out") ? type : "op";
+    const kind = family === "TOP" && (type === "shader" || type === "audio" || type === "webcam" || type === "out") ? type : "op";
     const inlets = inletHandles({ kind, family, type, channels: parseShader(code ?? TEMPLATE).channels });
     if (!inlets.length) {
       throw new ToolError(
@@ -555,7 +555,7 @@ function kindName(data: NodeData): string {
 
 function typesOf(family: Family): string[] {
   const ops = OPS.filter((spec) => spec.family === family).map((spec) => spec.type);
-  return family === "TOP" ? [...ops, "shader", "audio", "out"] : ops;
+  return family === "TOP" ? [...ops, "shader", "audio", "webcam", "out"] : ops;
 }
 
 function wireText(edge: Edge): string {

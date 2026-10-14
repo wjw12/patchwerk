@@ -447,7 +447,7 @@ function buildNode(id: string, rec: NodeRec, old: PNode | undefined): PNode {
     const opType = familyOf(rec) === "CHOP" ? "chop" : familyOf(rec) === "POP" ? "pop" : familyOf(rec) === "MAT" ? "mat" : familyOf(rec) === "COMP" ? "comp" : "top";
     return { ...base, type: opType, data };
   }
-  if (rec.kind === "audio") return { ...base, data: { kind: "audio", family: "TOP", label: rec.label, bypass: rec.bypass ?? false } };
+  if (rec.kind === "audio" || rec.kind === "webcam") return { ...base, data: { kind: rec.kind, family: "TOP", label: rec.label, bypass: rec.bypass ?? false } };
   if (rec.kind !== "shader") return { ...base, data: { kind: "out", family: "TOP", label: rec.label, bypass: rec.bypass ?? false } };
 
   const draft = codeMap.get(id)?.toString() ?? "";
