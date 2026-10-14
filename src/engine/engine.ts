@@ -717,7 +717,8 @@ export class Engine {
     const alpha = matResolved?.num.alpha ?? 0.9;
     const color: [number, number, number] = [matResolved?.num.colorr ?? 1, matResolved?.num.colorg ?? 1, matResolved?.num.colorb ?? 1];
     this.cloudLook = { scale, focus, alpha };
-    const mats = camera(camResolved?.num.tx ?? 0, camResolved?.num.ty ?? 0, camResolved?.num.tz ?? 5, camResolved?.num.fov ?? 45, COOK_W / COOK_H);
+    const camNum = camResolved?.num;
+    const mats = camera(camNum?.tx ?? 0, camNum?.ty ?? 0, camNum?.tz ?? 5, camNum?.fov ?? 45, COOK_W / COOK_H, [camNum?.lookx ?? 0, camNum?.looky ?? 0, camNum?.lookz ?? 0]);
     this.images.set(node.id, this.imageOps.render(node.id, { p: position, n: cloud.n, ...mats, scale, focus, alpha, color }));
     return null;
   }

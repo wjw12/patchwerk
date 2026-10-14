@@ -74,8 +74,17 @@ export function multiply(a: Float32Array, b: Float32Array): Float32Array {
   return out;
 }
 
-export function camera(tx: number, ty: number, tz: number, fov: number, aspect: number): { view: Float32Array; viewProj: Float32Array } {
-  const view = lookAt([tx, ty, tz], [0, 0, 0], [0, 1, 0]);
+export function camera(
+  tx: number,
+  ty: number,
+  tz: number,
+  fov: number,
+  aspect: number,
+  target: readonly number[] = [0, 0, 0],
+): { view: Float32Array; viewProj: Float32Array } {
+  // An eye on its own target has no direction; look down -z instead of dividing by zero.
+  const same = Math.hypot(tx - (target[0] ?? 0), ty - (target[1] ?? 0), tz - (target[2] ?? 0)) < 1e-6;
+  const view = lookAt([tx, ty, tz], same ? [tx, ty, tz - 1] : target, [0, 1, 0]);
   const proj = perspective(fov, aspect, 0.05, 100);
   return { view, viewProj: multiply(proj, view) };
 }

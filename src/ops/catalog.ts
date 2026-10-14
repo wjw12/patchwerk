@@ -183,7 +183,15 @@ export const OPS: OpSpec[] = [
     family: "COMP",
     type: "cam",
     inputs: 0,
-    pars: [num("tx", 0, -20, 20), num("ty", 0, -20, 20), num("tz", 5, 0.1, 40), num("fov", 45, 10, 120)],
+    pars: [
+      num("tx", 0, -20, 20),
+      num("ty", 0, -20, 20),
+      num("tz", 5, -40, 40),
+      num("fov", 45, 10, 120),
+      num("lookx", 0, -20, 20),
+      num("looky", 0, -20, 20),
+      num("lookz", 0, -40, 40),
+    ],
   },
   {
     family: "COMP",
