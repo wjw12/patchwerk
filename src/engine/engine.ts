@@ -79,6 +79,13 @@ export class Engine {
   private cloudLook = { scale: 6, focus: 4, alpha: 0.9 };
   private orbit = { yaw: 0.5, pitch: 0.35, dist: 6 };
   private skipAdvance = false;
+  /** Counts presented frames. Previews alternate on it, so they keep refreshing while paused. */
+  private presented = 0;
+  /** A fixed session has published its frame; from then on it re-cooks the same instant on edits. */
+  private settled = false;
+  private settleRaf = 0;
+  private settleCook = false;
+  private settledSeen: { edges: unknown; data: Map<string, unknown> } = { edges: null, data: new Map() };
 
   attach(canvas: HTMLCanvasElement, launch?: Launch): void {
     this.stop();
@@ -177,6 +184,9 @@ export class Engine {
     this.generation += 1;
     if (this.raf) cancelAnimationFrame(this.raf);
     this.raf = 0;
+    this.settled = false;
+    if (this.settleRaf) cancelAnimationFrame(this.settleRaf);
+    this.settleRaf = 0;
     this.abort.abort();
     this.abort = new AbortController();
     this.unsub?.();
@@ -251,6 +261,42 @@ export class Engine {
     }
     const stats = document.getElementById("stats");
     if (stats) stats.textContent = `frame ${frames} · t ${end.toFixed(2)}`;
+    this.settled = true;
+    this.noteFixedGraph();
+    this.refreshFixed(false);
+  }
+
+  /**
+   * After the probe is published, a fixed session stays at its instant. Previews that mount
+   * late get the cooked images; edits to parameters, wires or shaders cook that instant again.
+   */
+  private refreshFixed(cook: boolean): void {
+    if (!this.launch.fixed || !this.settled) return;
+    this.settleCook ||= cook;
+    if (this.settleRaf) return;
+    this.settleRaf = requestAnimationFrame(() => {
+      this.settleRaf = 0;
+      const recook = this.settleCook;
+      this.settleCook = false;
+      if (!this.settled) return;
+      this.present = true;
+      try {
+        if (recook) this.cook();
+        else this.presentAll(useGraph.getState().nodes);
+      } catch (error) {
+        this.failed = error instanceof Error ? error.message : "cook failed";
+      }
+    });
+  }
+
+  /** True when node data or wires changed since the last call (not just position, size or selection). */
+  private noteFixedGraph(): boolean {
+    const { nodes, edges } = useGraph.getState();
+    const seen = this.settledSeen;
+    const changed =
+      edges !== seen.edges || nodes.length !== seen.data.size || nodes.some((node) => seen.data.get(node.id) !== node.data);
+    this.settledSeen = { edges, data: new Map(nodes.map((node) => [node.id, node.data])) };
+    return changed;
   }
 
   private finishFixed(generation: number, probe: { ready: boolean; error: string | null; width: number; height: number; rgba: string }): void {
@@ -309,6 +355,7 @@ export class Engine {
     }
     const ctx = canvas.getContext("2d");
     if (ctx) this.previews.set(id, ctx);
+    this.refreshFixed(false);
   }
 
   /** Other people's cursors, normalized like the local one. They fill iCursors after ours. */
@@ -373,7 +420,10 @@ export class Engine {
 
   private boot(): void {
     this.booting = true;
-    const unsub = useGraph.subscribe((state) => this.watchDrafts(state.nodes));
+    const unsub = useGraph.subscribe((state) => {
+      this.watchDrafts(state.nodes);
+      if (this.settled) this.refreshFixed(this.noteFixedGraph());
+    });
     this.unsub = unsub;
     this.watchDrafts(useGraph.getState().nodes);
     this.booting = false;
@@ -448,22 +498,28 @@ export class Engine {
     if (!gl || gl.isContextLost() || !canvas || !this.tri || !this.copy || !this.black) return;
     const { nodes, edges } = useGraph.getState();
     if (nodes !== this.prunedFor) this.prune(nodes);
-    const selected = nodes.find((node) => node.selected) ?? nodes.find((node) => node.id === "out");
     this.fillAudio();
     this.cookOps(nodes, edges);
-    if (this.present) {
-      this.ensureDrawingBuffer();
-      if ((this.frame & 1) === 0 || this.launch.fixed) this.blitPreviews(nodes);
-      this.drawChopPreviews(nodes);
-      this.drawPopPreviews(nodes);
-      if (selected && this.viewer && this.viewerCtx) this.presentViewer(selected, nodes);
-    }
+    if (this.present) this.presentAll(nodes);
     const hud = document.getElementById("hud");
     if (hud) {
       const fresh = useGraph.getState().nodes;
       const live = fresh.filter((node) => (node.data.kind !== "shader" && node.data.kind !== "op") || node.data.status === "live").length;
       hud.textContent = this.failed || `${live}/${fresh.length} live · ${COOK_W}×${COOK_H} · ${this.frame}`;
     }
+  }
+
+  /** Copies cooked outputs into node previews and the viewer. Does not cook. */
+  private presentAll(nodes: PNode[]): void {
+    const gl = this.gl;
+    if (!gl || gl.isContextLost()) return;
+    const selected = nodes.find((node) => node.selected) ?? nodes.find((node) => node.id === "out");
+    this.presented += 1;
+    this.ensureDrawingBuffer();
+    if ((this.presented & 1) === 0 || this.launch.fixed) this.blitPreviews(nodes);
+    this.drawChopPreviews(nodes);
+    this.drawPopPreviews(nodes);
+    if (selected && this.viewer && this.viewerCtx) this.presentViewer(selected, nodes);
   }
 
   private prunedFor: PNode[] | null = null;
@@ -748,7 +804,7 @@ export class Engine {
       const pop = this.pops?.get(node.id);
       const position = pop?.attrs.get("P");
       if (!ctx || !pop || !position || !this.imageOps) continue;
-      if ((this.frame & 1) !== 0 && !node.selected && !this.launch.fixed) continue;
+      if ((this.presented & 1) !== 0 && !node.selected && !this.launch.fixed) continue;
       const mats = orbitCamera(0.6, 0.35, 5, 45, 16 / 9);
       const tex = this.imageOps.preview(
         "thumb",
