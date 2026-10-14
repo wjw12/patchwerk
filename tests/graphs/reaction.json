@@ -1,0 +1,12 @@
+{
+  "viewer": "out",
+  "nodes": [
+    { "id": "sim", "kind": "shader", "label": "gray-scott", "shader": "rd-sim.glsl", "x": 40, "y": 80 },
+    { "id": "shade", "kind": "shader", "label": "shade", "shader": "rd-display.glsl", "x": 340, "y": 80 },
+    { "id": "out", "kind": "out", "label": "out", "x": 640, "y": 80 }
+  ],
+  "edges": [
+    { "source": "sim", "target": "shade", "targetHandle": "ch0" },
+    { "source": "shade", "target": "out", "targetHandle": "ch0" }
+  ]
+}
