@@ -1,0 +1,19 @@
+{
+  "name": "patchwerk-server",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "bun --watch index.ts",
+    "start": "bun index.ts"
+  },
+  "dependencies": {
+    "@hocuspocus/extension-database": "4.7.1",
+    "@hocuspocus/server": "4.7.1",
+    "y-protocols": "^1.0.7",
+    "yjs": "13.6.33"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.2.0",
+    "typescript": "^5.7.3"
+  }
+}

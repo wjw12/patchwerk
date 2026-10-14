@@ -1,0 +1,14 @@
+{
+  "viewer": "out",
+  "nodes": [
+    { "id": "audio", "kind": "audio", "label": "audio", "x": 40, "y": 40 },
+    { "id": "warp", "kind": "shader", "label": "warp", "shader": "warp.glsl", "x": 40, "y": 240 },
+    { "id": "melt", "kind": "shader", "label": "melt", "shader": "melt.glsl", "x": 340, "y": 120 },
+    { "id": "out", "kind": "out", "label": "out", "x": 640, "y": 160 }
+  ],
+  "edges": [
+    { "source": "warp", "target": "melt", "targetHandle": "ch0" },
+    { "source": "audio", "target": "melt", "targetHandle": "ch1" },
+    { "source": "melt", "target": "out", "targetHandle": "ch0" }
+  ]
+}
