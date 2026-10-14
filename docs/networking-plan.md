@@ -15,7 +15,7 @@ Hackathon scope: the simplest thing that works. Versions verified against npm on
 | Shader code | `Y.Text` per node + `y-codemirror.next` | Two people type in one shader; remote carets; per-user undo. |
 | Ephemeral state | Yjs awareness | Who is here, who is editing which node, pointer over the viewer → `iCursors`. |
 | Addressing | `VITE_SYNC_URL`, server allows any origin | Frontend is static and hosted anywhere; the server is its own box. |
-| Rooms | `/r/<slug>`; `/` redirects to a random slug | Share the link. |
+| Rooms | `/r/<slug>`; `/` is a landing page; `/new?from=<template>` makes a fresh room | Share a room link to jam together, a `/new?from=` link to hand out copies. |
 
 **Not used:** any `@y/*` v14 prerelease, SQLite, Express, Socket.IO, a custom op protocol, server-side validation, accounts, undo across sessions.
 `yjs` is pinned to 13.6.33 in both packages; mixing a 14 prerelease anywhere breaks sync silently.
@@ -57,7 +57,7 @@ zustand stays the render state; the engine reads it every frame and never learne
 
 - **Local → doc.** `useGraph.subscribe` diffs `nodes`/`edges` against the previous state and writes only fields that differ from the doc, in one transaction with origin `LOCAL`. Every store action (add, drag, connect, delete, reset, load) syncs without its own code path. A drag tick is one `nodes[id]` write.
 - **Doc → local.** `doc.on('update')` with a non-local origin schedules one `pull()` per microtask. It rebuilds `PNode`s from the maps, re-parses a draft only when its text changed, keeps the local position while this client is mid-drag, and reuses the previous node object when nothing changed so React Flow doesn't re-render.
-- **Seeding.** Before the first `synced`, local edits are not pushed. On sync, an empty room is seeded from the local graph (demo or last save); otherwise the room replaces the local graph.
+- **Seeding.** Before the first `synced`, local edits are not pushed. On sync, an empty room is seeded from the local graph, which `main.tsx` sets before connecting: a graph handed over in localStorage (duplicate, open file), else `?from=<template>`, else the demo. Otherwise the room replaces the local graph and the template is ignored, so a template link never overwrites a room.
 - **Conflicts.** Two clients can each make a locally valid wire that together form a cycle or double up a channel. `pruneEdges` drops the loser deterministically (sorted by id) on every client and deletes it from the doc.
 - **`committed` is shared** so a joiner whose room has a broken draft still renders the last good program. Each client compiles the draft itself; the one that succeeds writes `committed`.
 - **Editor.** `CodeView` builds an `EditorView` from `ytext.toString()` with `yCollab(ytext, awareness)`; the controlled `@uiw/react-codemirror` is gone. Leva panels follow remote values through `set()` and only write back on `fromPanel`.

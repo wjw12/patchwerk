@@ -153,6 +153,16 @@ export const EXAMPLES: { name: string; load: () => Promise<GraphFile> }[] = Obje
   .filter((example) => !FIXTURES.has(example.name))
   .sort((a, b) => (a.name === "cloud" ? -1 : b.name === "cloud" ? 1 : a.name.localeCompare(b.name)));
 
+/** A room with nothing but the final picture. */
+export const BLANK: GraphFile = { viewer: "out", nodes: [{ id: "out", kind: "out", label: "out", x: 480, y: 200 }], edges: [] };
+
+/** What a new room can start from: `blank`, `demo` (the cloud example), or any example by name. */
+export async function templateFile(name: string): Promise<GraphFile | null> {
+  if (name === "blank") return BLANK;
+  const hit = EXAMPLES.find((example) => example.name === (name === "demo" ? "cloud" : name));
+  return hit ? hit.load() : null;
+}
+
 function lookupShader(name: string): string {
   if (!name) throw new Error("shader node is missing shader or source");
   const hit = Object.entries(shaders).find(([path]) => path.endsWith(`/${name}`));

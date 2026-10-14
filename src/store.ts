@@ -64,8 +64,6 @@ export type NodeData = ShaderData | AudioData | OutData | OpData;
 export type RfKind = "top" | "chop" | "pop" | "mat" | "comp";
 export type PNode = Node<NodeData, RfKind>;
 
-const KEY = "patchwerk.graph.v3";
-
 export interface GraphState {
   nodes: PNode[];
   edges: Edge[];
@@ -89,7 +87,6 @@ export interface GraphState {
   closePalette: () => void;
   setGpuError: (message: string | null) => void;
   addOp: (family: Family, type: string, position?: { x: number; y: number }) => void;
-  save: () => void;
   replace: (nodes: PNode[], edges: Edge[]) => void;
   /** Bumped when a whole graph was loaded; the network fits its view to it. */
   fit: number;
@@ -167,22 +164,11 @@ export function mergeParams(prev: ShaderParam[], next: ShaderParam[]): ShaderPar
   });
 }
 
-function readSaved(): { nodes: PNode[]; edges: Edge[] } | null {
-  try {
-    const raw = localStorage.getItem(KEY);
-    if (!raw) return null;
-    const data = JSON.parse(raw) as { nodes?: PNode[]; edges?: Edge[] };
-    if (!Array.isArray(data.nodes) || data.nodes.length === 0 || !Array.isArray(data.edges)) return null;
-    return { nodes: data.nodes, edges: data.edges };
-  } catch {
-    return null;
-  }
-}
-
 function initialGraph(): { nodes: PNode[]; edges: Edge[] } {
   const session = readSession();
   if (session.fixed) return session.graph ? { nodes: [], edges: [] } : demoGraph();
-  return readSaved() ?? demoGraph();
+  // A room shows the demo until its own graph (or the template it starts from) arrives.
+  return demoGraph();
 }
 
 const initial = initialGraph();
@@ -313,23 +299,10 @@ export const useGraph = create<GraphState>((set, get) => ({
         : state.edges,
     }));
   },
-  save: () => {
-    const { nodes, edges } = get();
-    localStorage.setItem(KEY, JSON.stringify({ nodes, edges }));
-  },
   replace: (nodes, edges) => set({ nodes, edges }),
   fit: 0,
   requestFit: () => set((state) => ({ fit: state.fit + 1 })),
 }));
-
-/** The graph last saved in this browser, if any. */
-export function savedGraph(): { nodes: PNode[]; edges: Edge[] } | null {
-  return readSaved();
-}
-
-export function clearSaved(): void {
-  localStorage.removeItem(KEY);
-}
 
 function applyOne(par: Par, name: string, patch: ParOverride & { text?: string; menu?: string }): Par {
   if (par.name !== name) return par;

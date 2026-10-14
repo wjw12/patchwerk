@@ -11,6 +11,7 @@
     "check:shaders": "bun scripts/check-shaders.ts",
     "test:visual": "bun scripts/visual.ts",
     "test:room": "bun scripts/e2e-room.ts",
+    "thumbs": "bun scripts/thumbs.ts",
     "server": "bun run --cwd server dev"
   },
   "devDependencies": {
