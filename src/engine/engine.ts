@@ -748,7 +748,7 @@ export class Engine {
       seconds: this.time,
       op: (name, channel) => {
         if (channel !== "chan1") throw new ExprError(`['${channel}'] is not cooked`);
-        const found = nodes.find((node) => node.data.label === name || node.id === name);
+        const found = nodes.find((node) => node.data.label === name);
         if (!found) throw new ExprError(`op('${name}') is missing`);
         if (found.data.kind !== "op" || found.data.family !== "CHOP") throw new ExprError(`op('${name}') is not a CHOP`);
         if (this.chopDone.has(found.id)) {
@@ -792,7 +792,7 @@ export class Engine {
 
   private byLabel(nodes: PNode[], label: string): PNode | undefined {
     if (!label) return undefined;
-    return nodes.find((node) => node.data.label === label || node.id === label);
+    return nodes.find((node) => node.data.label === label);
   }
 
   private drawChopPreviews(nodes: PNode[]): void {
@@ -918,8 +918,7 @@ export class Engine {
   private popForMat(mat: PNode, nodes: PNode[]): string | null {
     const geo = nodes.find((node) => {
       if (node.data.kind !== "op" || node.data.type !== "geo") return false;
-      const label = this.resolved.get(node.id)?.text.mat ?? "";
-      return label === mat.data.label || label === mat.id;
+      return this.resolved.get(node.id)?.text.mat === mat.data.label;
     });
     if (!geo) return null;
     return this.popId(nodes, this.resolved.get(geo.id)?.text.pop ?? "");
@@ -928,8 +927,7 @@ export class Engine {
   private popForCam(cam: PNode, nodes: PNode[]): string | null {
     const geo = nodes.find((node) => {
       if (node.data.kind !== "op" || node.data.type !== "geo") return false;
-      const label = this.resolved.get(node.id)?.text.cam ?? "";
-      return label === cam.data.label || label === cam.id;
+      return this.resolved.get(node.id)?.text.cam === cam.data.label;
     });
     if (!geo) return null;
     return this.popId(nodes, this.resolved.get(geo.id)?.text.pop ?? "");
@@ -947,8 +945,7 @@ export class Engine {
       const geo = this.byLabel(nodes, this.resolved.get(item.id)?.text.geo ?? "");
       if (!geo || geo.data.kind !== "op" || geo.data.type !== "geo") return false;
       if (node.data.type === "geo") return geo.id === node.id;
-      const cam = this.resolved.get(geo.id)?.text.cam ?? "";
-      return cam === node.data.label || cam === node.id;
+      return this.resolved.get(geo.id)?.text.cam === node.data.label;
     });
   }
 

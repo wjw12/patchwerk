@@ -24,6 +24,8 @@ export interface TextPar {
   kind: "text";
   name: string;
   value: string;
+  /** The value names another op by its label; a rename follows it. */
+  ref?: boolean;
 }
 
 export type Par = NumberPar | MenuPar | TextPar;
@@ -67,6 +69,7 @@ const num = (name: string, value: number, min: number, max: number, step?: numbe
 
 const menu = (name: string, value: string, options: string[]): MenuPar => ({ kind: "menu", name, value, options });
 const text = (name: string, value: string): TextPar => ({ kind: "text", name, value });
+const ref = (name: string): TextPar => ({ kind: "text", name, value: "", ref: true });
 
 export const OPS: OpSpec[] = [
   {
@@ -173,9 +176,9 @@ export const OPS: OpSpec[] = [
     family: "COMP",
     type: "geo",
     inputs: 0,
-    pars: [text("pop", ""), text("mat", ""), text("cam", "")],
+    pars: [ref("pop"), ref("mat"), ref("cam")],
   },
-  { family: "TOP", type: "render", inputs: 0, pars: [text("geo", "")] },
+  { family: "TOP", type: "render", inputs: 0, pars: [ref("geo")] },
   {
     family: "TOP",
     type: "bloom",

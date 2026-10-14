@@ -249,11 +249,19 @@ export const useGraph = create<GraphState>((set, get) => ({
       nodes: state.nodes.map((node) => (node.id === id ? { ...node, data: { ...node.data, bypass } } : node)),
     })),
   rename: (id, label) => {
-    const next = label.trim();
-    if (!next) return;
-    set((state) => ({
-      nodes: state.nodes.map((node) => (node.id === id ? { ...node, data: { ...node.data, label: next } } : node)),
-    }));
+    const want = label.trim();
+    if (!want) return;
+    set((state) => {
+      const old = state.nodes.find((node) => node.id === id)?.data.label;
+      if (old == null) return {};
+      const next = uniqueLabel(want, state.nodes, id);
+      if (next === old) return {};
+      return {
+        nodes: state.nodes.map((node) =>
+          node.id === id ? { ...node, data: { ...node.data, label: next } } : followRename(node, old, next),
+        ),
+      };
+    });
   },
   setCookStatus: (id, status, error) =>
     set((state) => ({
@@ -287,7 +295,7 @@ export const useGraph = create<GraphState>((set, get) => ({
   addOp: (family, type, position) => {
     const at = position ?? { x: 120 + Math.random() * 180, y: 80 + Math.random() * 140 };
     const id = `${type.slice(0, 4)}${crypto.randomUUID().slice(0, 4)}`;
-    const node = makeNode(id, family, type, at);
+    const node = makeNode(id, uniqueLabel(`${type}1`, get().nodes), family, type, at);
     set((state) => ({
       palette: null,
       editorOpen: type === "shader" ? true : state.editorOpen,
@@ -332,14 +340,45 @@ function applyOne(par: Par, name: string, patch: ParOverride & { text?: string; 
   return next;
 }
 
-function makeNode(id: string, family: Family, type: string, position: { x: number; y: number }): PNode {
+/** Labels are how op('name') and geo/render find a node, so no two nodes share one: noise1, noise2. */
+function uniqueLabel(want: string, nodes: PNode[], self?: string): string {
+  const taken = new Set(nodes.filter((node) => node.id !== self).map((node) => node.data.label));
+  if (!taken.has(want)) return want;
+  const base = want.replace(/\d+$/, "");
+  for (let n = 1; ; n++) {
+    if (!taken.has(`${base}${n}`)) return `${base}${n}`;
+  }
+}
+
+/** Points op('old') expressions and op-name parameters at the new label. Unchanged nodes keep identity. */
+function followRename(node: PNode, old: string, next: string): PNode {
+  if (node.data.kind !== "op") return node;
+  const call = new RegExp(`op\\(\\s*(['"])${old.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\1\\s*\\)`, "g");
+  let changed = false;
+  const pars = node.data.pars.map((par): Par => {
+    if (par.kind === "number" && par.expr) {
+      const expr = par.expr.replace(call, (_match, quote: string) => `op(${quote}${next}${quote})`);
+      if (expr === par.expr) return par;
+      changed = true;
+      return { ...par, expr };
+    }
+    if (par.kind === "text" && par.ref && par.value === old) {
+      changed = true;
+      return { ...par, value: next };
+    }
+    return par;
+  });
+  return changed ? { ...node, data: { ...node.data, pars } } : node;
+}
+
+function makeNode(id: string, label: string, family: Family, type: string, position: { x: number; y: number }): PNode {
   const selected = true;
   if (type === "shader" && family === "TOP") {
     const parsed = parseShader(TEMPLATE);
     const data: ShaderData = {
       kind: "shader",
       family: "TOP",
-      label: id,
+      label,
       draft: TEMPLATE,
       committed: null,
       status: "idle",
@@ -352,12 +391,12 @@ function makeNode(id: string, family: Family, type: string, position: { x: numbe
     return { id, type: "top", position, selected, data };
   }
   if (type === "audio" && family === "TOP") {
-    return { id, type: "top", position, selected, data: { kind: "audio", family: "TOP", label: id, bypass: false } };
+    return { id, type: "top", position, selected, data: { kind: "audio", family: "TOP", label, bypass: false } };
   }
   if (type === "out" && family === "TOP") {
-    return { id, type: "top", position, selected, data: { kind: "out", family: "TOP", label: id, bypass: false } };
+    return { id, type: "top", position, selected, data: { kind: "out", family: "TOP", label, bypass: false } };
   }
-  const data = createOpData(family, type, id);
+  const data = createOpData(family, type, label);
   return { id, type: rfType(family), position, selected, data };
 }
 
