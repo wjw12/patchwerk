@@ -15,6 +15,9 @@ import type { PNode } from "../store";
 import { FULLSCREEN_VS } from "./fullscreen";
 import { COPY_FS, PASSTHROUGH } from "./sources";
 import { compilerErrors, parseShader, wrapShader, type ShaderParam } from "./wrap";
+const GPU_TIMEOUT = "GPU timeout / context lost. Running the last good version; edit the shader to try again.";
+/** How long after a commit a context loss is still blamed on it. */
+const SUSPECT_MS = 10_000;
 const TEST_W = 48;
 const TEST_H = 48;
 const THUMB_W = 160;
@@ -89,6 +92,10 @@ export class Engine {
   private settleCook = false;
   private settledSeen: { edges: unknown; data: Map<string, unknown> } = { edges: null, data: new Map() };
   private floatLinear = false;
+  /** The newest commit, until it has run long enough to be trusted. */
+  private suspect: { id: string; source: string; good: string | null; at: number } | null = null;
+  /** Hashes of shader sources that lost the context. Survives restore and stop(). */
+  private poisoned = new Set<string>();
 
   attach(canvas: HTMLCanvasElement, launch?: Launch): void {
     this.stop();
@@ -120,7 +127,10 @@ export class Engine {
       "webglcontextlost",
       (event) => {
         event.preventDefault();
-        this.failed = "WebGL context lost. Restoring the last good shaders.";
+        const blamed = this.blameLoss();
+        this.failed = blamed
+          ? `WebGL context lost, likely a GPU timeout in ${blamed}. Restoring the last good shaders.`
+          : "WebGL context lost. Restoring the last good shaders.";
         this.programs.clear();
         this.runtime.clear();
       },
@@ -133,11 +143,17 @@ export class Engine {
         this.programs.clear();
         this.runtime.clear();
         this.drafts.clear();
+        this.images.clear();
         try {
+          // Extensions are per context; a restored context starts without them.
+          if (!gl.getExtension("EXT_color_buffer_float")) throw new Error("EXT_color_buffer_float is missing after restore");
+          this.floatLinear = gl.getExtension("OES_texture_float_linear") != null;
           this.initResources();
           this.booting = true;
           this.watchDrafts(useGraph.getState().nodes);
           this.booting = false;
+          // Re-committing ran-before drafts is not new evidence; only fresh edits are suspects.
+          this.suspect = null;
         } catch (error) {
           this.fail(error instanceof Error ? error.message : "WebGL restore failed");
         }
@@ -470,14 +486,15 @@ export class Engine {
 
   private commit(id: string): void {
     const gl = this.gl;
-    if (!gl) return;
+    // A lost context compiles nothing; the restore re-commits every draft.
+    if (!gl || gl.isContextLost()) return;
     const node = useGraph.getState().nodes.find((item) => item.id === id);
     if (!node || node.data.kind !== "shader") return;
-    const parsed = parseShader(node.data.draft);
-    if (parsed.staticError) {
-      useGraph.getState().applyCompile(id, { status: "error", error: parsed.staticError });
+    if (this.poisoned.has(hash(node.data.draft))) {
+      useGraph.getState().applyCompile(id, { status: "error", error: GPU_TIMEOUT });
       return;
     }
+    const parsed = parseShader(node.data.draft);
     const wrapped = wrapShader(node.data.draft);
     const compiled = this.compile(wrapped.source);
     if ("error" in compiled) {
@@ -487,8 +504,14 @@ export class Engine {
       });
       return;
     }
+    // Loops are not bounded statically. If this program hangs the GPU, the driver resets the
+    // context and the loss is pinned on the newest commit (see blameLoss).
+    const before = this.suspect;
+    this.suspect = { id, source: node.data.draft, good: node.data.committed, at: performance.now() };
     const bad = this.testOutput(compiled.info, parsed.params);
+    if (gl.isContextLost()) return;
     if (bad) {
+      this.suspect = before;
       gl.deleteProgram(compiled.info.program);
       useGraph.getState().applyCompile(id, { status: "error", error: bad });
       return;
@@ -629,7 +652,7 @@ export class Engine {
   ): void {
     const bypass = node.data.kind === "shader" && node.data.bypass;
     const source = node.data.kind === "out" || bypass ? PASSTHROUGH : node.data.kind === "shader" ? node.data.committed : null;
-    if (!source) return;
+    if (!source || this.poisoned.has(hash(source))) return;
     const parsed = parseShader(source);
     const wrapped = wrapShader(source);
     let info = this.programs.get(hash(wrapped.source));
@@ -1404,6 +1427,23 @@ export class Engine {
 
   private emitPointer(): void {
     this.onPointer?.({ x: this.pointer.x, y: this.pointer.y, down: this.pointer.down });
+  }
+
+  /**
+   * A context loss soon after a commit is pinned on that shader: its source is never compiled
+   * again this session (the restore and any peer copy skip it), and the node falls back to the
+   * source it had before. Editing the code gives it a new hash and a new try.
+   */
+  private blameLoss(): string | null {
+    const suspect = this.suspect;
+    this.suspect = null;
+    if (!suspect || performance.now() - suspect.at > SUSPECT_MS) return null;
+    this.poisoned.add(hash(suspect.source));
+    const node = useGraph.getState().nodes.find((item) => item.id === suspect.id);
+    if (!node || node.data.kind !== "shader") return null;
+    const good = suspect.good && !this.poisoned.has(hash(suspect.good)) ? suspect.good : undefined;
+    useGraph.getState().applyCompile(suspect.id, { status: "error", error: GPU_TIMEOUT, committed: good });
+    return node.data.label;
   }
 
   private fail(message: string): void {

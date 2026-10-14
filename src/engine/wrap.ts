@@ -20,7 +20,6 @@ export interface ParsedShader {
   channels: number[];
   feedback: boolean;
   params: ShaderParam[];
-  staticError: string | null;
 }
 
 const HEADER = `#version 300 es
@@ -115,7 +114,6 @@ export function parseShader(source: string): ParsedShader {
     channels: [...channels].sort(),
     feedback,
     params,
-    staticError: staticReject(stripped),
   };
 }
 
@@ -157,20 +155,6 @@ export function errorMarks(log: string, userLines: number): { line: number; mess
     marks.push({ line: Number(match[1]), message: match[2] || line });
   }
   return marks;
-}
-
-function staticReject(stripped: string): string | null {
-  if (/\bwhile\s*\(/.test(stripped)) {
-    return "while loops are rejected — they can hang the GPU. Use a fixed for-loop bound.";
-  }
-  if (/for\s*\(\s*;/.test(stripped)) {
-    return "unbounded for loops are rejected. Give the loop a numeric upper bound.";
-  }
-  for (const match of stripped.matchAll(/for\s*\([^;]*;\s*[\w.]+\s*<\s*(\d+)/g)) {
-    const bound = Number(match[1]);
-    if (bound > 256) return `loop bound ${bound} is too high (max 256) — it can hang the GPU.`;
-  }
-  return null;
 }
 
 function stripComments(source: string): string {
