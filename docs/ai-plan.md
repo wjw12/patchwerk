@@ -73,7 +73,7 @@ The SDK runs read-only tools (`get_graph`, `read_shader`, `view`) in parallel, s
 - `index.ts` branches websocket upgrades on `url.pathname`: `/ai` → `aiSocket`, everything else → Hocuspocus as today.
 - One agent per room: `Map<room, socket>`; a second `start` is answered with `error: "claude is already working in this room"`.
 - Per socket: an `AbortController`, the pending-RPC map, and an async generator of `SDKUserMessage` fed by `start`/`user` frames.
-- Static system prompt (§9) built once at boot. The catalog block is generated from `OPS` plus a `DESCRIBE` map in `src/ops/catalog.ts`, which the server imports directly (`../src/ops/catalog.ts` has no DOM dependency). No client text ever enters the system prompt.
+- Static system prompt (§9) built once at boot. The catalog block is generated from `OPS` plus the `DESCRIBE` and `PAR_NOTES` maps in `src/ops/catalog.ts`, which the server imports directly (`../src/ops/catalog.ts` has no DOM dependency). No client text ever enters the system prompt.
 - `query({ prompt: generator, options })` with:
   ```ts
   {
@@ -313,7 +313,7 @@ Browser side: `engine.snapshot(id, 768, 432)` per frame with `await sleep(interv
 
 ## 9. System prompt
 
-Sent as `systemPrompt` (a plain string) and identical for every session so the prefix caches. `{{catalog}}` is generated at server boot from `OPS` plus a `DESCRIBE` map in `src/ops/catalog.ts`. The goal and the current graph go in the **user** message: `Goal: <goal>\n\nRoom now:\n<get_graph text>`; follow-up turns attach a fresh graph the same way.
+Sent as `systemPrompt` (a plain string) and identical for every session so the prefix caches. `{{catalog}}` is generated at server boot from `OPS` plus the `DESCRIBE` and `PAR_NOTES` maps in `src/ops/catalog.ts`. The goal and the current graph go in the **user** message: `Goal: <goal>\n\nRoom now:\n<get_graph text>`; follow-up turns attach a fresh graph the same way.
 
 ```
 You are the patch assistant inside Patchwerk, a multiplayer generative-art engine in the spirit of TouchDesigner. People in this room are watching the picture change live. You are given a goal and you reach it by editing the live patch with the tools, looking at the result, and iterating.

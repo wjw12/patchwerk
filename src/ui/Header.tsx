@@ -145,8 +145,8 @@ export function Header() {
         </div>
       )}
       <div className="topbar-actions">
-        <button type="button" onClick={() => openPalette(window.innerWidth / 2, 88)}>
-          add
+        <button type="button" className="add" title="add an op (Tab over the network, or double-click it)" onClick={() => openPalette(window.innerWidth / 2, 88)}>
+          add <kbd>Tab</kbd>
         </button>
         <button type="button" className="undo" disabled={!canUndo} title="undo your last graph edit (Ctrl+Z)" onClick={undo}>
           ↶

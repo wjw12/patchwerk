@@ -25,7 +25,20 @@ export interface TextPar {
   name: string;
   value: string;
   /** The value names another op of this family (and type) by its label; a rename follows it. */
-  ref?: { family: Family; type?: string };
+  ref?: { family: Family; type?: string; pattern?: boolean };
+}
+
+/** Whether a name parameter names this label: the whole value, or one word of a pattern like render.lights. */
+export function namesLabel(par: TextPar, label: string): boolean {
+  if (!par.ref) return false;
+  if (!par.ref.pattern) return par.value === label;
+  return par.value.split(/[\s,]+/).includes(label);
+}
+
+/** The value after `old` is renamed to `next`; a pattern keeps its other words and wildcards. */
+export function renamedValue(par: TextPar, old: string, next: string): string {
+  if (!par.ref?.pattern) return par.value === old ? next : par.value;
+  return par.value.replace(/[^\s,]+/g, (word) => (word === old ? next : word));
 }
 
 export type Par = NumberPar | MenuPar | TextPar;
@@ -70,6 +83,7 @@ const num = (name: string, value: number, min: number, max: number, step?: numbe
 const menu = (name: string, value: string, options: string[]): MenuPar => ({ kind: "menu", name, value, options });
 const text = (name: string, value: string): TextPar => ({ kind: "text", name, value });
 const ref = (name: string, family: Family, type?: string): TextPar => ({ kind: "text", name, value: "", ref: { family, type } });
+const pattern = (name: string, value: string, family: Family, type?: string): TextPar => ({ kind: "text", name, value, ref: { family, type, pattern: true } });
 
 export const OPS: OpSpec[] = [
   {
@@ -180,6 +194,28 @@ export const OPS: OpSpec[] = [
     ],
   },
   {
+    family: "MAT",
+    type: "phong",
+    inputs: 0,
+    pars: [
+      num("scale", 10, 0.1, 64),
+      num("focus", 4, 0, 32),
+      num("diffr", 1, 0, 4),
+      num("diffg", 1, 0, 4),
+      num("diffb", 1, 0, 4),
+      num("specr", 1, 0, 4),
+      num("specg", 1, 0, 4),
+      num("specb", 1, 0, 4),
+      num("shininess", 40, 1, 256),
+      num("ambr", 0.15, 0, 4),
+      num("ambg", 0.15, 0, 4),
+      num("ambb", 0.15, 0, 4),
+      num("emitr", 0, 0, 4),
+      num("emitg", 0, 0, 4),
+      num("emitb", 0, 0, 4),
+    ],
+  },
+  {
     family: "COMP",
     type: "cam",
     inputs: 0,
@@ -195,11 +231,26 @@ export const OPS: OpSpec[] = [
   },
   {
     family: "COMP",
+    type: "light",
+    inputs: 0,
+    pars: [
+      menu("lighttype", "point", ["point", "distant", "ambient"]),
+      num("tx", 3, -20, 20),
+      num("ty", 4, -20, 20),
+      num("tz", 5, -40, 40),
+      num("colorr", 1, 0, 4),
+      num("colorg", 1, 0, 4),
+      num("colorb", 1, 0, 4),
+      num("dimmer", 1, 0, 8),
+    ],
+  },
+  {
+    family: "COMP",
     type: "geo",
     inputs: 0,
     pars: [ref("pop", "POP"), ref("mat", "MAT"), ref("cam", "COMP", "cam")],
   },
-  { family: "TOP", type: "render", inputs: 0, pars: [ref("geo", "COMP", "geo")] },
+  { family: "TOP", type: "render", inputs: 0, pars: [ref("geo", "COMP", "geo"), pattern("lights", "*", "COMP", "light")] },
   {
     family: "TOP",
     type: "bloom",
@@ -301,23 +352,47 @@ export const DESCRIBE: Record<string, string> = {
   "POP:transform": "translate, rotate (degrees) and scale every point",
   "POP:merge": "concatenates in0 and in1, at most 4096 points total",
   "POP:null": "passes in0",
-  "MAT:point": "additive points; color above 1 blooms",
+  "MAT:point": "additive glowing sprites, no depth, ignores lights; color above 1 blooms",
+  "MAT:phong": "opaque lit spheres with depth: ambient·amb + Σ light·(diff·N·L + spec·(N·H)^shininess) + emit; needs a light COMP (without one a headlight sits at the camera)",
   "COMP:cam": "camera at t looking at look",
+  "COMP:light": "lights phong MATs. point: at t; distant: parallel rays from t toward the origin; ambient: lifts everything by color. dimmer scales color",
   "COMP:geo": "what render draws",
-  "TOP:render": "draws the geo's points into an image",
+  "TOP:render": "draws the geo's points into an image; lights is * (every light COMP) or labels separated by spaces, * wildcards allowed; only phong uses them",
   "TOP:bloom": "glow",
+};
+
+/** What the less obvious parameters do; catalogText prints it under the op for the assistant. */
+export const PAR_NOTES: Record<string, string> = {
+  "CHOP:lfo": "frequency in Hz",
+  "CHOP:pattern": "phase in cycles; e.g. phase = absTime.seconds*0.5",
+  "CHOP:math": "in1 is only read by add",
+  "POP:pointgen": "s is the radius; n is floored to an integer",
+  "POP:noise": "period: feature size in world units; harmon: extra octaves (0..2); spread: frequency step per octave; gain: amplitude step per octave; amp: overall scale; t4d: 4th noise dimension, animate it with absTime.seconds; seed shifts the field",
+  "POP:mathmix": "scope names: P (position), Noise (from a noise POP), any earlier result name, or a literal number; oper mix weights by C",
+  "POP:mathcombine": "same math as mathmix; a scope may also name one of this node's number pars (scopeC weight), so weight can be driven by an expression",
+  "POP:transform": "applied scale, then rotate x→y→z, then translate",
+  "MAT:point": "on-screen size is scale·(1 + focus/distance) pixels at the 960x540 cook, clamped to 1..64; alpha and color multiply the additive glow. Reads only P: every point gets the same color",
+  "MAT:phong": "size as point (64 px cap, so past scale ≈35 at focus 4 nothing grows). diff: diffuse color; spec: specular highlight color; shininess: highlight tightness (higher is smaller); amb: how much ambient light it takes; emit: self-lit color. Reads only P. At most 4 point/distant lights count; ambient lights add up",
+  "COMP:cam": "t is the eye position, look is the point it aims at; fov is vertical, in degrees",
+  "COMP:light": "lighttype point|distant|ambient; t is the position. No rotation: a distant light shines from t toward the origin; an ambient light ignores t. color × dimmer is the light",
+  "COMP:geo": "pop, mat and cam are labels of a POP, a MAT and a cam COMP",
+  "TOP:render": "geo is a geo COMP label; lights matches light COMP labels (default * = all). Cooks at 960x540; out shows it at 1920x1080",
+  "TOP:bloom": "threshold: brightness that starts to glow (the 0.01 default glows nearly everything, right for sparse point glow; raise to ~0.8 after phong so only highlights glow); fill: how far it spreads; intensity: glow added back; pregamma: contrast before thresholding",
 };
 
 function describePar(par: Par): string {
   if (par.kind === "menu") return `${par.name} ${par.options.join("|")}`;
+  if (par.kind === "text" && par.ref?.pattern) return `${par.name} ${par.value} <${par.ref.type ?? par.ref.family} labels, * wildcards>`;
   if (par.kind === "text") return par.ref ? `${par.name} <${par.ref.type ?? par.ref.family} label>` : `${par.name} ${par.value}`;
   return `${par.name} ${par.value} [${par.min}..${par.max}]${par.step === 1 ? " int" : ""}`;
 }
 
 export function catalogText(): string {
   const lines = OPS.map((spec) => {
+    const key = `${spec.family}:${spec.type}`;
     const pars = spec.pars.length ? spec.pars.map(describePar).join("  ") : "—";
-    return `${spec.family.padEnd(4)} ${spec.type.padEnd(12)} inputs ${spec.inputs}   ${pars}   ${DESCRIBE[`${spec.family}:${spec.type}`] ?? ""}`;
+    const head = `${spec.family.padEnd(4)} ${spec.type.padEnd(12)} inputs ${spec.inputs}   ${pars}   ${DESCRIBE[key] ?? ""}`;
+    return PAR_NOTES[key] ? `${head}\n${" ".repeat(18)}${PAR_NOTES[key]}` : head;
   });
   lines.push(
     "TOP  shader       inlets chN for each iChannelN the code reads   params from @range/@color   one GLSL program",

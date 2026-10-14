@@ -1,7 +1,7 @@
 import * as twgl from "twgl.js";
 import bloomFs from "../ops/top/bloom.glsl?raw";
 import { FULLSCREEN_VS } from "./fullscreen";
-import { PointMat, type PointDraw } from "./mat";
+import { PhongMat, PointMat, type Light, type PhongLook, type PointDraw } from "./mat";
 import { COPY_FS } from "./sources";
 
 export const COOK_W = 960;
@@ -21,6 +21,9 @@ export interface CloudDraw {
   alpha: number;
   /** Point MAT color; previews leave it out and draw white. */
   color?: [number, number, number];
+  /** Set for a phong MAT: lit opaque spheres instead of additive points. */
+  phong?: PhongLook;
+  lights?: Light[];
 }
 
 export interface BloomPars {
@@ -36,9 +39,12 @@ interface Level {
   target: twgl.FramebufferInfo;
 }
 
-/** TOP render (point MAT into RGBA16F) and bloom. POP textures are never read back here. */
+/** TOP render (point or phong MAT into RGBA16F) and bloom. POP textures are never read back here. */
 export class ImageOps {
   private points: PointMat;
+  private phong: PhongMat;
+  /** Depth for phong, one per size, attached to a target only while phong draws into it. */
+  private depths = new Map<string, WebGLRenderbuffer>();
   private bloom: twgl.ProgramInfo;
   private copy: twgl.ProgramInfo;
   private tri: twgl.BufferInfo;
@@ -49,6 +55,7 @@ export class ImageOps {
 
   constructor(private gl: WebGL2RenderingContext) {
     this.points = new PointMat(gl);
+    this.phong = new PhongMat(gl);
     this.tri = twgl.createBufferInfoFromArrays(gl, {
       aPos: { numComponents: 2, data: [-1, -1, 3, -1, -1, 3] },
     });
@@ -89,14 +96,7 @@ export class ImageOps {
       this.clear(target);
       return { tex: target.attachments[0] as WebGLTexture, w: COOK_W, h: COOK_H };
     }
-    const draw: PointDraw = {
-      ...cloud,
-      color: cloud.color ?? [1, 1, 1],
-      target,
-      width: COOK_W,
-      height: COOK_H,
-    };
-    this.points.draw(draw);
+    this.drawCloud(cloud, target, COOK_W, COOK_H, cloud.color ?? [1, 1, 1]);
     return { tex: target.attachments[0] as WebGLTexture, w: COOK_W, h: COOK_H };
   }
 
@@ -114,8 +114,44 @@ export class ImageOps {
       this.clear(target);
       return target.attachments[0] as WebGLTexture;
     }
-    this.points.draw({ ...cloud, color: [1, 1, 1], target, width, height });
+    // Phong spheres are solid, so at render size they would fill a thumb; keep them in proportion to the cook.
+    const sized = cloud.phong ? { ...cloud, scale: (cloud.scale * height) / COOK_H } : cloud;
+    this.drawCloud(sized, target, width, height, [1, 1, 1]);
     return target.attachments[0] as WebGLTexture;
+  }
+
+  private drawCloud(cloud: CloudDraw, target: twgl.FramebufferInfo, width: number, height: number, color: [number, number, number]): void {
+    if (cloud.phong) {
+      this.phong.draw({ ...cloud, look: cloud.phong, lights: cloud.lights ?? [], depth: this.depth(width, height), target, width, height });
+      return;
+    }
+    const draw: PointDraw = { ...cloud, color, target, width, height };
+    this.points.draw(draw);
+  }
+
+  private depth(w: number, h: number): WebGLRenderbuffer {
+    const key = `${w}x${h}`;
+    const existing = this.depths.get(key);
+    if (existing) {
+      // Most recent last, so resizing previews evicts an old size and never the cook's.
+      this.depths.delete(key);
+      this.depths.set(key, existing);
+      return existing;
+    }
+    const gl = this.gl;
+    const buffer = gl.createRenderbuffer();
+    if (!buffer) throw new Error("could not create a depth buffer");
+    gl.bindRenderbuffer(gl.RENDERBUFFER, buffer);
+    gl.renderbufferStorage(gl.RENDERBUFFER, gl.DEPTH_COMPONENT24, w, h);
+    gl.bindRenderbuffer(gl.RENDERBUFFER, null);
+    // Previews resize with their panel; keep only a few sizes around.
+    if (this.depths.size >= 6) {
+      const [oldKey, old] = this.depths.entries().next().value as [string, WebGLRenderbuffer];
+      gl.deleteRenderbuffer(old);
+      this.depths.delete(oldKey);
+    }
+    this.depths.set(key, buffer);
+    return buffer;
   }
 
   bloomPass(id: string, source: WebGLTexture, sourceW: number, sourceH: number, pars: BloomPars): { tex: WebGLTexture; w: number; h: number } {

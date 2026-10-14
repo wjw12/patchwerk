@@ -19,6 +19,8 @@ import {
   createOpData,
   hasOutlet,
   inletHandles,
+  namesLabel,
+  renamedValue,
   type InletSource,
   type OpData,
   type Par,
@@ -65,9 +67,33 @@ export type RfKind = "top" | "chop" | "pop" | "mat" | "comp";
 
 export interface AddOpOptions {
   position?: { x: number; y: number };
-  after?: string;
+  /** Wire this node's outlet into the new op's first inlet. Unset: the one selected node; null: no wire. */
+  after?: string | null;
+  /** Feed this inlet from the new op, replacing whatever fed it: insert into a wire, or grow a chain backwards. */
+  into?: Inlet;
   label?: string;
   select?: boolean;
+}
+
+export interface Inlet {
+  target: string;
+  handle: string;
+}
+
+/** Where a new op from the palette goes and what it wires to, fixed when the palette opens. */
+export interface AddIntent {
+  after?: string | null;
+  into?: Inlet;
+  /** Opened from a dropped wire or a wire: the op lands where the palette opened instead of following the cursor. */
+  here?: boolean;
+  family?: Family;
+}
+
+export interface Placing extends AddIntent {
+  family: Family;
+  type: string;
+  x: number;
+  y: number;
 }
 export type PNode = Node<NodeData, RfKind>;
 
@@ -76,11 +102,15 @@ export interface GraphState {
   edges: Edge[];
   editorOpen: boolean;
   playing: boolean;
-  palette: { x: number; y: number } | null;
+  palette: ({ x: number; y: number } & AddIntent) | null;
+  /** An op picked from the palette, following the cursor until a click puts it down. */
+  placing: Placing | null;
   gpuError: string | null;
   onNodesChange: (changes: NodeChange<PNode>[]) => void;
   onEdgesChange: (changes: EdgeChange[]) => void;
   onConnect: OnConnect;
+  /** A wire end dragged to another inlet or outlet. Refused: the old wire stays. */
+  reconnect: (old: Edge, connection: Connection) => void;
   updateDraft: (id: string, draft: string) => void;
   setParam: (id: string, name: string, value: ShaderParamPatch) => void;
   setOpPar: (id: string, name: string, patch: ParOverride & { text?: string; menu?: string }) => void;
@@ -90,8 +120,10 @@ export interface GraphState {
   applyCompile: (id: string, patch: { status: "live" | "error"; error: string | null; committed?: string }) => void;
   setEditorOpen: (open: boolean) => void;
   setPlaying: (playing: boolean) => void;
-  openPalette: (x: number, y: number) => void;
+  openPalette: (x: number, y: number, intent?: AddIntent) => void;
   closePalette: () => void;
+  startPlacing: (placing: Placing) => void;
+  cancelPlacing: () => void;
   setGpuError: (message: string | null) => void;
   addOp: (family: Family, type: string, options?: AddOpOptions) => string;
   replace: (nodes: PNode[], edges: Edge[]) => void;
@@ -126,7 +158,8 @@ export function keepsWire(data: NodeData, handle: string): boolean {
   return nodeInlets(data).includes(handle);
 }
 
-export function isValidConnection(connection: Edge | Connection): boolean {
+/** `replace`: an inlet that already has a wire takes the new one instead (the network does this; the assistant must disconnect first). */
+export function isValidConnection(connection: Edge | Connection, replace = false): boolean {
   if (!connection.source || !connection.target) return false;
   if (connection.source === connection.target) return false;
   if (connection.sourceHandle && connection.sourceHandle !== "out") return false;
@@ -141,8 +174,10 @@ export function isValidConnection(connection: Edge | Connection): boolean {
   const occupied = edges.some(
     (edge) => edge.target === connection.target && edge.targetHandle === handle && edge.source !== connection.source,
   );
-  if (occupied) return false;
-  return !reaches(connection.target, connection.source, edges);
+  if (occupied && !replace) return false;
+  // A wire being replaced cannot be what closes the loop.
+  const rest = replace ? edges.filter((edge) => !(edge.target === connection.target && edge.targetHandle === handle)) : edges;
+  return !reaches(connection.target, connection.source, rest);
 }
 
 function reaches(from: string, to: string, edges: Edge[]): boolean {
@@ -186,14 +221,25 @@ export const useGraph = create<GraphState>((set, get) => ({
   editorOpen: false,
   playing: true,
   palette: null,
+  placing: null,
   gpuError: null,
   onNodesChange: (changes) => set({ nodes: applyNodeChanges(changes, get().nodes) }),
   onEdgesChange: (changes) => set({ edges: applyEdgeChanges(changes, get().edges) }),
   onConnect: (connection) => {
-    if (!isValidConnection(connection)) return;
+    if (!isValidConnection(connection, true)) return;
     const source = get().nodes.find((node) => node.id === connection.source);
     const style = wireStyle(source?.data.family ?? "TOP");
-    set({ edges: addEdge({ ...connection, style }, get().edges) });
+    // One wire per inlet: a new one replaces the old.
+    const kept = get().edges.filter((edge) => !(edge.target === connection.target && edge.targetHandle === connection.targetHandle));
+    set({ edges: addEdge({ ...connection, style }, kept) });
+  },
+  reconnect: (old, connection) => {
+    // React Flow checked the drop already; one set, so peers never cook a frame without either wire.
+    const source = get().nodes.find((node) => node.id === connection.source);
+    const kept = get().edges.filter(
+      (edge) => edge.id !== old.id && !(edge.target === connection.target && edge.targetHandle === connection.targetHandle),
+    );
+    set({ edges: addEdge({ ...connection, style: wireStyle(source?.data.family ?? "TOP") }, kept) });
   },
   updateDraft: (id, draft) => {
     const parsed = parseShader(draft);
@@ -283,28 +329,48 @@ export const useGraph = create<GraphState>((set, get) => ({
     })),
   setEditorOpen: (open) => set({ editorOpen: open }),
   setPlaying: (playing) => set({ playing }),
-  openPalette: (x, y) => set({ palette: { x, y } }),
+  openPalette: (x, y, intent = {}) => set({ palette: { x, y, ...intent }, placing: null }),
   closePalette: () => set({ palette: null }),
+  startPlacing: (placing) => set({ palette: null, placing }),
+  cancelPlacing: () => set({ placing: null }),
   setGpuError: (message) => set({ gpuError: message }),
   addOp: (family, type, options = {}) => {
     const select = options.select ?? true;
     const id = `${type.slice(0, 4)}${crypto.randomUUID().slice(0, 4)}`;
     const { nodes, edges } = get();
     const picked = nodes.filter((item) => item.selected);
-    const after = options.after ? nodes.find((item) => item.id === options.after) : select && picked.length === 1 ? picked[0] : undefined;
+    const after =
+      options.after === null
+        ? undefined
+        : options.after
+          ? nodes.find((item) => item.id === options.after)
+          : select && picked.length === 1
+            ? picked[0]
+            : undefined;
     const at = options.position ?? placeNear(after, nodes);
     const node = makeNode(id, uniqueLabel(options.label ?? `${type}1`, nodes), family, type, at, select);
     if (node.data.kind === "op") node.data = { ...node.data, pars: guessRefs(node.data.pars, nodes, edges, after) };
     const inlet = nodeInlets(node.data)[0];
     const wire = after && inlet && after.data.family === family && nodeOutlet(after.data);
-    set((state) => ({
-      palette: null,
-      editorOpen: select && type === "shader" ? true : state.editorOpen,
-      nodes: select ? [...state.nodes.map((item) => ({ ...item, selected: false })), node] : [...state.nodes, node],
-      edges: wire
+    const into = options.into && nodes.find((item) => item.id === options.into?.target);
+    const feeds = into && options.into && into.data.family === family && nodeOutlet(node.data) && keepsWire(into.data, options.into.handle);
+    set((state) => {
+      let next = wire
         ? addEdge({ source: after.id, sourceHandle: "out", target: id, targetHandle: inlet, style: wireStyle(family) }, state.edges)
-        : state.edges,
-    }));
+        : state.edges;
+      if (feeds && options.into) {
+        const { target, handle } = options.into;
+        next = next.filter((edge) => !(edge.target === target && edge.targetHandle === handle));
+        next = addEdge({ source: id, sourceHandle: "out", target, targetHandle: handle, style: wireStyle(family) }, next);
+      }
+      return {
+        palette: null,
+        placing: null,
+        editorOpen: select && type === "shader" ? true : state.editorOpen,
+        nodes: select ? [...state.nodes.map((item) => ({ ...item, selected: false })), node] : [...state.nodes, node],
+        edges: next,
+      };
+    });
     return id;
   },
   replace: (nodes, edges) => set({ nodes, edges }),
@@ -387,9 +453,9 @@ function followRename(node: PNode, old: string, next: string): PNode {
       changed = true;
       return { ...par, expr };
     }
-    if (par.kind === "text" && par.ref && par.value === old) {
+    if (par.kind === "text" && namesLabel(par, old)) {
       changed = true;
-      return { ...par, value: next };
+      return { ...par, value: renamedValue(par, old, next) };
     }
     return par;
   });

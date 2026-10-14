@@ -39,7 +39,7 @@ try {
   await b.waitForFunction(() => document.querySelectorAll(".topbar .peer").length === 1, undefined, { timeout: 15_000 });
   check("both tabs list one peer", true);
 
-  // Add a shader TOP from the palette: double-click empty network, filter, Enter.
+  // Add a shader TOP from the palette: double-click empty network, filter, Enter, click to put it down.
   const pane = await a.$eval(".react-flow__pane", (el) => {
     const r = el.getBoundingClientRect();
     return { x: r.left + 24, y: r.top + 24 };
@@ -48,6 +48,8 @@ try {
   await a.waitForSelector(".palette input", { timeout: 5_000 });
   await a.keyboard.type("shader");
   await a.keyboard.press("Enter");
+  await a.waitForSelector(".held", { timeout: 5_000 });
+  await a.mouse.click(pane.x + 8, pane.y + 8);
   await nodeCount(b, seeded + 1, 10_000);
   check("node added in A appears in B", true);
 

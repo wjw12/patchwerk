@@ -47,7 +47,7 @@ function patchwerkTools(call: Call) {
     ),
     tool(
       "set_param",
-      "Set one parameter on one node. A number sets a constant; `{expr}` makes the parameter cook from an expression every frame; a string picks a menu option or sets a name parameter (geo.pop, geo.mat, geo.cam, render.geo); `#rrggbb` sets a color uniform. Values outside the slider range are accepted and flagged. Integer parameters are rounded.",
+      "Set one parameter on one node. A number sets a constant; `{expr}` makes the parameter cook from an expression every frame; a string picks a menu option or sets a name parameter (geo.pop, geo.mat, geo.cam, render.geo, render.lights); `#rrggbb` sets a color uniform. Values outside the slider range are accepted and flagged. Integer parameters are rounded.",
       {
         node,
         name: z.string().describe('par name as printed by get_graph, e.g. "fov", "uDecay", "iChannel0.wrap"'),

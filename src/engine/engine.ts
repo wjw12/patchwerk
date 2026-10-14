@@ -5,6 +5,7 @@ import { cookOrder } from "./cook";
 import { ExprError, type ExprEnv } from "./expr";
 import { camera, orbitCamera } from "./math";
 import { PopBank, type PopOut } from "./pop";
+import type { Light, PhongLook } from "./mat";
 import { COOK_H, COOK_W, freeTarget, ImageOps, OUT_H, OUT_W } from "./render";
 import { clearLive } from "./live";
 import { resolvePars, type Resolved } from "./resolve";
@@ -96,7 +97,8 @@ export class Engine {
   private chopHist = new Map<string, number[]>();
   private chopDone = new Set<string>();
   private resolved = new Map<string, Resolved>();
-  private cloudLook = { scale: 6, focus: 4, alpha: 0.9 };
+  /** How the last render drew its points; POP previews and the orbit viewer draw the same way. */
+  private cloudLook: { scale: number; focus: number; alpha: number; phong?: PhongLook; lights?: Light[] } = { scale: 6, focus: 4, alpha: 0.9 };
   private orbit = { yaw: 0.5, pitch: 0.35, dist: 6 };
   private skipAdvance = false;
   /** Counts presented frames. Previews alternate on it, so they keep refreshing while paused. */
@@ -933,10 +935,12 @@ export class Engine {
     const focus = matResolved?.num.focus ?? 4;
     const alpha = matResolved?.num.alpha ?? 0.9;
     const color: [number, number, number] = [matResolved?.num.colorr ?? 1, matResolved?.num.colorg ?? 1, matResolved?.num.colorb ?? 1];
-    this.cloudLook = { scale, focus, alpha };
+    const phong = mat?.data.kind === "op" && mat.data.type === "phong" ? phongLook(matResolved?.num ?? {}) : undefined;
+    const lights = phong ? this.lightsFor(nodes, resolved.text.lights ?? "*") : undefined;
+    this.cloudLook = { scale, focus, alpha, phong, lights };
     const camNum = camResolved?.num;
     const mats = camera(camNum?.tx ?? 0, camNum?.ty ?? 0, camNum?.tz ?? 5, camNum?.fov ?? 45, COOK_W / COOK_H, [camNum?.lookx ?? 0, camNum?.looky ?? 0, camNum?.lookz ?? 0]);
-    this.images.set(node.id, this.imageOps.render(node.id, { p: position, n: cloud.n, ...mats, scale, focus, alpha, color }));
+    this.images.set(node.id, this.imageOps.render(node.id, { p: position, n: cloud.n, ...mats, scale, focus, alpha, color, phong, lights }));
     return null;
   }
 
@@ -1013,6 +1017,23 @@ export class Engine {
     return this.pops?.get(node.id) ?? null;
   }
 
+  /** The light COMPs a render's `lights` pattern names: `*`, labels, or globs, separated by spaces. */
+  private lightsFor(nodes: PNode[], pattern: string): Light[] {
+    return nodes.filter((node) => isLight(node) && matchesPattern(pattern, node.data.label)).map((node) => this.light(node));
+  }
+
+  private light(node: PNode): Light {
+    const resolved = this.resolved.get(node.id);
+    const num = resolved?.num ?? {};
+    const dimmer = num.dimmer ?? 1;
+    const kind = resolved?.menu.lighttype;
+    return {
+      kind: kind === "distant" || kind === "ambient" ? kind : "point",
+      pos: [num.tx ?? 3, num.ty ?? 4, num.tz ?? 5],
+      color: [(num.colorr ?? 1) * dimmer, (num.colorg ?? 1) * dimmer, (num.colorb ?? 1) * dimmer],
+    };
+  }
+
   private byLabel(nodes: PNode[], label: string): PNode | undefined {
     if (!label) return undefined;
     return nodes.find((node) => node.data.label === label);
@@ -1038,7 +1059,7 @@ export class Engine {
       const mats = orbitCamera(0.6, 0.35, 5, 45, 16 / 9);
       const tex = this.imageOps.preview(
         "thumb",
-        { p: position, n: pop.n, ...mats, scale: this.cloudLook.scale, focus: this.cloudLook.focus, alpha: this.cloudLook.alpha },
+        { p: position, n: pop.n, ...mats, ...this.cloudLook },
         160,
         90,
       );
@@ -1070,8 +1091,16 @@ export class Engine {
       this.paintPoints(dest, ctx, node.id, size, slot);
       return null;
     }
-    if (node.data.kind === "op" && node.data.type === "point") {
-      this.paintPoints(dest, ctx, this.popForMat(node, nodes) ?? this.unitPop(), size, slot);
+    if (node.data.kind === "op" && (node.data.type === "point" || node.data.type === "phong")) {
+      const phong = node.data.type === "phong" ? phongLook(this.resolved.get(node.id)?.num ?? {}) : undefined;
+      this.paintPoints(dest, ctx, this.popForMat(node, nodes) ?? this.unitPop(), size, slot, { phong, lights: phong && this.lightsFor(nodes, this.lightsForMat(node, nodes)) });
+      return null;
+    }
+    if (node.data.kind === "op" && node.data.type === "light") {
+      const image = this.renderFor(node, nodes);
+      if (image && this.outputTexture(image)) return this.blitImage(image, dest, ctx, size);
+      // Full ambient response, so an ambient light previews as what it adds and not as black.
+      this.paintPoints(dest, ctx, this.unitPop(), size, slot, { phong: phongLook({ ambr: 1, ambg: 1, ambb: 1 }), lights: [this.light(node)] });
       return null;
     }
     if (node.data.kind === "op" && (node.data.type === "cam" || node.data.type === "geo")) {
@@ -1099,6 +1128,8 @@ export class Engine {
     popId: string | null,
     size: { w: number; h: number },
     slot: "viewer" | "snapshot",
+    /** Overrides the last render's look: a MAT or light previews itself. */
+    look?: { phong: PhongLook | undefined; lights: Light[] | undefined },
   ): void {
     fitCanvas(dest, size);
     const pop = popId ? this.pops?.get(popId) : undefined;
@@ -1111,7 +1142,7 @@ export class Engine {
     const mats = orbitCamera(this.orbit.yaw, this.orbit.pitch, this.orbit.dist, 45, size.w / Math.max(size.h, 1));
     const tex = this.imageOps.preview(
       slot,
-      { p: position, n: pop.n, ...mats, scale: this.cloudLook.scale, focus: this.cloudLook.focus, alpha: this.cloudLook.alpha },
+      { p: position, n: pop.n, ...mats, ...this.cloudLook, ...look },
       size.w,
       size.h,
     );
@@ -1161,6 +1192,13 @@ export class Engine {
     return this.popId(nodes, this.resolved.get(geo.id)?.text.pop ?? "");
   }
 
+  /** The lights pattern of the render that draws this MAT, so its preview is lit the same way. */
+  private lightsForMat(mat: PNode, nodes: PNode[]): string {
+    const geo = nodes.find((node) => node.data.kind === "op" && node.data.type === "geo" && this.resolved.get(node.id)?.text.mat === mat.data.label);
+    const render = geo && nodes.find((node) => node.data.kind === "op" && node.data.type === "render" && this.resolved.get(node.id)?.text.geo === geo.data.label);
+    return (render && this.resolved.get(render.id)?.text.lights) ?? "*";
+  }
+
   private popForCam(cam: PNode, nodes: PNode[]): string | null {
     const geo = nodes.find((node) => {
       if (node.data.kind !== "op" || node.data.type !== "geo") return false;
@@ -1179,6 +1217,7 @@ export class Engine {
   private renderFor(node: PNode, nodes: PNode[]): PNode | undefined {
     return nodes.find((item) => {
       if (item.data.kind !== "op" || item.data.type !== "render") return false;
+      if (node.data.kind === "op" && node.data.type === "light") return matchesPattern(this.resolved.get(item.id)?.text.lights ?? "*", node.data.label);
       const geo = this.byLabel(nodes, this.resolved.get(item.id)?.text.geo ?? "");
       if (!geo || geo.data.kind !== "op" || geo.data.type !== "geo") return false;
       if (node.data.type === "geo") return geo.id === node.id;
@@ -1206,7 +1245,7 @@ export class Engine {
     const node = useGraph.getState().nodes.find((item) => item.selected);
     if (!node) return false;
     if (node.data.family === "POP") return true;
-    return node.data.kind === "op" && (node.data.type === "point" || node.data.type === "geo" || node.data.type === "cam");
+    return node.data.kind === "op" && (node.data.type === "point" || node.data.type === "phong" || node.data.type === "light" || node.data.type === "geo" || node.data.type === "cam");
   }
 
   private uniformsFor(
@@ -1779,3 +1818,25 @@ function halfToFloat(h: number): number {
 }
 
 export const engine = new Engine();
+
+function isLight(node: PNode): boolean {
+  return node.data.kind === "op" && node.data.family === "COMP" && node.data.type === "light";
+}
+
+/** `*` is every light; otherwise labels separated by spaces or commas, each may use `*` as a wildcard. */
+export function matchesPattern(pattern: string, label: string): boolean {
+  return pattern
+    .split(/[\s,]+/)
+    .filter(Boolean)
+    .some((word) => new RegExp("^" + word.replace(/[.+?^$()|[\]\\{}]/g, "\\$&").replace(/\*/g, ".*") + "$").test(label));
+}
+
+function phongLook(num: Record<string, number>): PhongLook {
+  return {
+    diff: [num.diffr ?? 1, num.diffg ?? 1, num.diffb ?? 1],
+    spec: [num.specr ?? 1, num.specg ?? 1, num.specb ?? 1],
+    amb: [num.ambr ?? 0.15, num.ambg ?? 0.15, num.ambb ?? 0.15],
+    emit: [num.emitr ?? 0, num.emitg ?? 0, num.emitb ?? 0],
+    shininess: num.shininess ?? 40,
+  };
+}

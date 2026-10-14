@@ -7,7 +7,7 @@ import { COOK_H, COOK_W } from "../engine/render";
 import { TEMPLATE } from "../engine/sources";
 import { parseShader, type ParsedShader, type ShaderParam } from "../engine/wrap";
 import { FAMILIES, type Family } from "../family";
-import { inletHandles, OPS, type Par, type ParMode } from "../ops/catalog";
+import { inletHandles, namesLabel, OPS, type Par, type ParMode } from "../ops/catalog";
 import { isValidConnection, nodeInlets, nodeOutlet, useGraph, type NodeData, type PNode, type ShaderData } from "../store";
 import { useSync } from "../sync";
 import type { Content, ToolName, ToolResult } from "./protocol";
@@ -207,16 +207,21 @@ function validateExpr(expr: string): void {
   }
 }
 
-function checkRef(where: string, ref: { family: Family; type?: string }, value: string): void {
+function checkRef(where: string, ref: { family: Family; type?: string; pattern?: boolean }, value: string): void {
   const candidates = useGraph
     .getState()
     .nodes.filter((node) => node.data.family === ref.family && (!ref.type || (node.data.kind === "op" && node.data.type === ref.type)))
     .map((node) => node.data.label);
-  if (candidates.includes(value)) return;
+  // A pattern may hold wildcards; every plain word in it must still be a label.
+  const words = ref.pattern ? value.split(/[\s,]+/).filter((word) => word && !word.includes("*")) : [value];
+  const missing = words.filter((word) => !candidates.includes(word));
+  if (missing.length === 0) return;
   const there = candidates.length
     ? `there ${candidates.length === 1 ? "is" : "are"} ${candidates.join(", ")}`
     : "there is none yet; add one with add_node";
-  throw new ToolError(`${where} must name a ${ref.type ? `${ref.family}/${ref.type}` : ref.family}; ${there}`);
+  const what = ref.type ? `${ref.family}/${ref.type}` : ref.family;
+  if (ref.pattern) throw new ToolError(`${where}: ${missing.join(", ")} ${missing.length === 1 ? "is not a" : "are not"} ${what}; use * or labels; ${there}`);
+  throw new ToolError(`${where} must name a ${what}; ${there}`);
 }
 
 function addNode(input: Input): string {
@@ -389,7 +394,7 @@ function refusal(source: PNode, target: PNode, inlet: string): string | null {
   const from = source.data;
   const to = target.data;
   if (source.id === target.id) return `${from.label} cannot feed itself; use // @feedback in a shader for a loop`;
-  if (!nodeOutlet(from)) return `${from.label} has no outlet; ${from.family === "MAT" ? "a MAT is used through geo.mat" : "a COMP is used through geo.cam or render.geo"}`;
+  if (!nodeOutlet(from)) return `${from.label} has no outlet; ${from.family === "MAT" ? "a MAT is used through geo.mat" : "a COMP is used through geo.cam, render.geo or render.lights"}`;
   if (from.family !== to.family) return `families differ (${from.family} → ${to.family}); ${crossHint(from.family, to.family)}`;
   const inlets = nodeInlets(to);
   if (!inlets.includes(inlet)) return `${to.label} has no inlet ${inlet} (${inletHint(to, inlets)})`;
@@ -444,7 +449,7 @@ function references(label: string, except: string): { followed: string[]; prev: 
     const data = node.data;
     if (data.kind === "op") {
       for (const par of data.pars) {
-        if ((par.kind === "number" && call.test(par.expr)) || (par.kind === "text" && par.ref && par.value === label)) followed.push(`${data.label}.${par.name}`);
+        if ((par.kind === "number" && call.test(par.expr)) || (par.kind === "text" && namesLabel(par, label))) followed.push(`${data.label}.${par.name}`);
       }
     }
     if (data.kind === "shader") {

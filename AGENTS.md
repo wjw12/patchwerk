@@ -7,8 +7,8 @@ Operators belong to a family. A wire only connects two operators of the same fam
 - **TOP** — images on the GPU. A shader TOP is one GLSL ES 3.00 program into a float framebuffer. ShaderToy `mainImage` shaders paste in.
 - **CHOP** — short numeric signals on the CPU.
 - **POP** — point clouds on the GPU.
-- **MAT** — how a POP is drawn.
-- **COMP** — cameras and, later, nested networks.
+- **MAT** — how a POP is drawn: point (additive glow) or phong (lit spheres).
+- **COMP** — cameras, lights, geos and, later, nested networks.
 - **DAT** — text and tables.
 
 Cooking walks the wires. A node runs when an input, a parameter, or time changed. Cycles are rejected. The legal loops read last frame: `// @feedback` brings a node's own previous frame back on `iChannel3`, and `// @prev iChannel1 bufB` binds another shader TOP's (or `self`'s) previous frame, so ShaderToy buffers can read each other.
@@ -38,11 +38,11 @@ The collapsible panel on the left talks to `/ai` on the room server, which holds
 
 ## Now
 
-The boot graph is a POP cloud. CHOP lfo, pattern, audioband, math, and null cook one sample per frame on the CPU. Expressions (`absTime.seconds`, `op('name')['chan1']`, `+ - * /`, `sin`, `fract`, `mod` and a few more) are evaluated on the CPU and can point at a CHOP by its label. POP pointgen, noise, mathmix, mathcombine, and transform cook as RGBA32F textures, one texel per point. A point MAT draws them additively into a render TOP, then bloom, then out. The playbar pauses `absTime`. The viewer follows the selection. ShaderToy TOPs, audio, and `// @feedback` still cook; load that graph with `?graph=/tests/graphs/melt.json`.
+The boot graph is a POP cloud. CHOP lfo, pattern, audioband, math, and null cook one sample per frame on the CPU. Expressions (`absTime.seconds`, `op('name')['chan1']`, `+ - * /`, `sin`, `fract`, `mod` and a few more) are evaluated on the CPU and can point at a CHOP by its label. POP pointgen, noise, mathmix, mathcombine, and transform cook as RGBA32F textures, one texel per point. A point MAT draws them additively into a render TOP, then bloom, then out; a phong MAT draws them as opaque lit spheres with depth, lit by light COMPs (point, distant, ambient) that the render TOP picks with its `lights` pattern. The playbar pauses `absTime`. The viewer follows the selection. ShaderToy TOPs, audio, and `// @feedback` still cook; load that graph with `?graph=/tests/graphs/melt.json`.
 
 ## Next
 
-More POP generators, a GLSL MAT, and DAT text for shader bodies. Networking stays on the current document until it is updated for these families.
+More POP generators, a GLSL MAT, and DAT text for shader bodies. The assistant's catalog is `catalogText()`: a new op or parameter needs a `DESCRIBE` line and, if its parameters are not obvious, a `PAR_NOTES` line. Networking stays on the current document until it is updated for these families.
 
 ## Development
 
