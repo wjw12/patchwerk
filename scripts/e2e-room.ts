@@ -99,6 +99,12 @@ try {
   await b.reload({ waitUntil: "load" });
   await nodeCount(b, seeded + 1);
   check("B reload restores every node from the room", true);
+
+  // Undo is per tab: A's Ctrl+Z takes back A's add (not B's drag), for both tabs.
+  await a.click(".react-flow__pane", { position: { x: 8, y: 8 } });
+  await a.keyboard.press("Control+z");
+  await nodeCount(b, seeded);
+  check("Ctrl+Z in A removes A's node in B", true);
 } catch (error) {
   check("e2e", false, error instanceof Error ? error.message : String(error));
 } finally {
