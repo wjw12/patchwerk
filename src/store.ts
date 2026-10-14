@@ -92,9 +92,10 @@ export interface GraphState {
   setGpuError: (message: string | null) => void;
   addOp: (family: Family, type: string, position?: { x: number; y: number }) => void;
   save: () => void;
-  load: () => boolean;
-  reset: () => void;
   replace: (nodes: PNode[], edges: Edge[]) => void;
+  /** Bumped when a whole graph was loaded; the network fits its view to it. */
+  fit: number;
+  requestFit: () => void;
 }
 
 export function nodeInlets(data: NodeData): string[] {
@@ -320,18 +321,19 @@ export const useGraph = create<GraphState>((set, get) => ({
     const { nodes, edges } = get();
     localStorage.setItem(KEY, JSON.stringify({ nodes, edges }));
   },
-  load: () => {
-    const saved = readSaved();
-    if (!saved) return false;
-    set(saved);
-    return true;
-  },
-  reset: () => {
-    localStorage.removeItem(KEY);
-    set(demoGraph());
-  },
   replace: (nodes, edges) => set({ nodes, edges }),
+  fit: 0,
+  requestFit: () => set((state) => ({ fit: state.fit + 1 })),
 }));
+
+/** The graph last saved in this browser, if any. */
+export function savedGraph(): { nodes: PNode[]; edges: Edge[] } | null {
+  return readSaved();
+}
+
+export function clearSaved(): void {
+  localStorage.removeItem(KEY);
+}
 
 function applyOne(par: Par, name: string, patch: ParOverride & { text?: string; menu?: string }): Par {
   if (par.name !== name) return par;

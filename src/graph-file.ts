@@ -57,11 +57,11 @@ export function buildGraph(file: GraphFile): { nodes: PNode[]; edges: Edge[]; vi
 function toNode(node: GraphNode, selected: boolean): PNode {
   const position = { x: node.x ?? 0, y: node.y ?? 0 };
   if (node.kind === "audio") {
-    const data: AudioData = { kind: "audio", family: "TOP", label: node.label ?? node.id, bypass: false };
+    const data: AudioData = { kind: "audio", family: "TOP", label: node.label ?? node.id, bypass: node.bypass ?? false };
     return { id: node.id, type: "top", position, selected, data };
   }
   if (node.kind === "out") {
-    const data: OutData = { kind: "out", family: "TOP", label: node.label ?? node.id, bypass: false };
+    const data: OutData = { kind: "out", family: "TOP", label: node.label ?? node.id, bypass: node.bypass ?? false };
     return { id: node.id, type: "top", position, selected, data };
   }
   if (node.kind === "op") {
@@ -89,6 +89,64 @@ function toNode(node: GraphNode, selected: boolean): PNode {
   };
   return { id: node.id, type: "top", position, selected, data };
 }
+
+/**
+ * The graph as a file `buildGraph` reads back. A shader whose draft is one of src/ops is
+ * written by name like tests/graphs; any other draft goes inline as `source`. Op
+ * parameters are written only where they differ from the operator's defaults.
+ */
+export function toGraphFile(nodes: PNode[], edges: Edge[]): GraphFile {
+  const out = nodes.find((node) => node.data.kind === "out") ?? nodes.at(-1);
+  return {
+    viewer: out?.id,
+    nodes: nodes.map((node): GraphNode => {
+      const { data } = node;
+      const base = {
+        id: node.id,
+        kind: data.kind,
+        label: data.label,
+        x: Math.round(node.position.x),
+        y: Math.round(node.position.y),
+        ...(data.bypass ? { bypass: true } : {}),
+      };
+      if (data.kind === "op") {
+        const defaults = createOpData(data.family, data.type, data.label).pars;
+        const pars: Record<string, ParOverride> = {};
+        for (const par of data.pars) {
+          const was = defaults.find((item) => item.name === par.name);
+          if (par.kind === "number") {
+            const same = was?.kind === "number" && was.mode === par.mode && was.value === par.value && was.expr === par.expr;
+            if (same) continue;
+            pars[par.name] = par.mode === "expression" ? { mode: "expression", expr: par.expr, value: par.value } : par.value;
+          } else if (was?.value !== par.value) {
+            pars[par.name] = par.value;
+          }
+        }
+        return { ...base, family: data.family, type: data.type, ...(Object.keys(pars).length ? { pars } : {}) };
+      }
+      if (data.kind !== "shader") return base;
+      const named = Object.entries(shaders).find(([, source]) => source === data.draft)?.[0];
+      const params: Record<string, number | number[]> = {};
+      for (const param of data.params) params[param.name] = param.kind === "float" ? param.value : [...param.value];
+      return {
+        ...base,
+        ...(named ? { shader: named.slice(named.lastIndexOf("/") + 1) } : { source: data.draft }),
+        ...(data.params.length ? { params } : {}),
+      };
+    }),
+    edges: edges.map((edge) => ({ source: edge.source, target: edge.target, targetHandle: edge.targetHandle ?? "ch0" })),
+  };
+}
+
+const examples = import.meta.glob("../tests/graphs/*.json", { import: "default" }) as Record<string, () => Promise<GraphFile>>;
+/** Test fixtures that only make sense to the visual test. */
+const FIXTURES = new Set(["feedback-precision", "template"]);
+
+/** The graphs in tests/graphs, by name, bundled with the app. */
+export const EXAMPLES: { name: string; load: () => Promise<GraphFile> }[] = Object.entries(examples)
+  .map(([path, load]) => ({ name: path.slice(path.lastIndexOf("/") + 1, -".json".length), load }))
+  .filter((example) => !FIXTURES.has(example.name))
+  .sort((a, b) => (a.name === "cloud" ? -1 : b.name === "cloud" ? 1 : a.name.localeCompare(b.name)));
 
 function lookupShader(name: string): string {
   if (!name) throw new Error("shader node is missing shader or source");

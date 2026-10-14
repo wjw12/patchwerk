@@ -29,6 +29,7 @@ export function App() {
         if (dead) return;
         viewer.current = built.viewer;
         useGraph.getState().replace(built.nodes, built.edges);
+        useGraph.getState().requestFit();
         setReadyToCook(true);
       } catch (error) {
         const message = error instanceof Error ? error.message : "graph failed to load";

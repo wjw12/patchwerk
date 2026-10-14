@@ -18,7 +18,7 @@ function serveGraphs(): Plugin {
         const url = rawUrl;
         if (!url.startsWith("/tests/graphs/")) return next();
         const name = path.basename(url);
-        if (!/^[a-z0-9-]+\.json$/.test(name)) return next();
+        if (!/^[a-z0-9_-]+\.json$/.test(name)) return next();
         const file = path.join(root, "tests/graphs", name);
         if (!existsSync(file)) {
           res.statusCode = 404;

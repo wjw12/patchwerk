@@ -67,6 +67,8 @@ const codeMap = doc.getMap<Y.Text>("code");
 const committedMap = doc.getMap<string>("committed");
 const paramsMap = doc.getMap<ParamValue>("params");
 const edgesMap = doc.getMap<EdgeRec>("edges");
+/** `loaded` changes when someone replaces the whole graph, so every client re-fits its view. */
+const metaMap = doc.getMap<string>("meta");
 
 let provider: HocuspocusProvider | null = null;
 let ready = false;
@@ -119,6 +121,44 @@ export function breakUndo(): void {
   history.stopCapturing();
 }
 
+/**
+ * Replaces the whole graph (import, example, load, reset). In a room it is one transaction
+ * that empties every map first, so nothing of the old graph lingers under a reused id, and
+ * one undo step brings the old graph back.
+ */
+export function replaceGraph(nodes: PNode[], edges: Edge[]): void {
+  if (!ready) {
+    // Before the first sync, or in a fixed session: only this tab's graph changes.
+    localCode.clear();
+    useGraph.getState().replace(nodes, edges);
+    useGraph.getState().requestFit();
+    return;
+  }
+  history.stopCapturing();
+  doc.transact(() => {
+    nodesMap.clear();
+    codeMap.clear();
+    committedMap.clear();
+    paramsMap.clear();
+    edgesMap.clear();
+    for (const node of nodes) writeNode(node);
+    for (const edge of edges) writeEdge(edge);
+  }, LOCAL);
+  history.stopCapturing();
+  const loaded = crypto.randomUUID();
+  lastLoaded = loaded;
+  doc.transact(() => metaMap.set("loaded", loaded), QUIET);
+  applying = true;
+  try {
+    useGraph.getState().replace(nodes, edges);
+  } finally {
+    applying = false;
+  }
+  useGraph.getState().requestFit();
+}
+
+let lastLoaded: string | undefined;
+
 export function getCode(id: string): Y.Text | null {
   return codeMap.get(id) ?? null;
 }
@@ -153,7 +193,11 @@ export function connect(room: string): void {
     onSynced: () => {
       if (ready) return;
       if (nodesMap.size === 0) seed(useGraph.getState());
-      else pull();
+      else {
+        // The room's graph replaces the local one; fit the view to it.
+        lastLoaded = "(before the first sync)";
+        pull();
+      }
       ready = true;
       useSync.setState({ synced: true });
     },
@@ -276,6 +320,13 @@ function schedulePull(): void {
 function pull(): void {
   const state = useGraph.getState();
   const before = new Map(state.nodes.map((node) => [node.id, node]));
+  // Someone replaced the whole graph: a reused id is a new node, nothing carries over.
+  const loaded = metaMap.get("loaded");
+  const reloaded = loaded !== lastLoaded;
+  if (reloaded) {
+    lastLoaded = loaded;
+    before.clear();
+  }
   const nodes: PNode[] = [];
   nodesMap.forEach((rec, id) => {
     const old = before.get(id);
@@ -291,6 +342,7 @@ function pull(): void {
   } finally {
     applying = false;
   }
+  if (reloaded) useGraph.getState().requestFit();
 }
 
 function familyOf(rec: NodeRec): Family {
