@@ -6,6 +6,9 @@ import { COPY_FS } from "./sources";
 
 export const COOK_W = 960;
 export const COOK_H = 540;
+/** `out` alone draws at 1080p: its passthrough samples the 960×540 cook with linear filtering. */
+export const OUT_W = 1920;
+export const OUT_H = 1080;
 const BLOOM_LEVELS = 5;
 
 export interface CloudDraw {

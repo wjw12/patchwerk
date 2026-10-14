@@ -5,7 +5,7 @@ import { cookOrder } from "./cook";
 import { ExprError, type ExprEnv } from "./expr";
 import { camera, orbitCamera } from "./math";
 import { PopBank, type PopOut } from "./pop";
-import { COOK_H, COOK_W, freeTarget, ImageOps } from "./render";
+import { COOK_H, COOK_W, freeTarget, ImageOps, OUT_H, OUT_W } from "./render";
 import { clearLive } from "./live";
 import { resolvePars, type Resolved } from "./resolve";
 import { encodeBytes, publish } from "../probe";
@@ -456,13 +456,24 @@ export class Engine {
     if (!runtime) throw new Error(`no cooked output for ${viewerId}`);
     const x = Math.floor((COOK_W - CAPTURE_W) / 2);
     const y = Math.floor((COOK_H - CAPTURE_H) / 2);
-    twgl.bindFramebufferInfo(gl, runtime.front);
+    // Goldens are cook pixels. out draws at 1080p, so run its pass once more at the cook size.
+    let target = runtime.front;
+    const redraw = target.width !== COOK_W || target.height !== COOK_H;
+    if (redraw) {
+      const { nodes, edges } = useGraph.getState();
+      const node = nodes.find((item) => item.id === viewerId);
+      if (!node) throw new Error(`no node ${viewerId}`);
+      target = this.makeTarget(COOK_W, COOK_H);
+      this.draw(runtime.info, target, this.uniformsFor(node, this.parseCached(runtime.source).params, false, target, edges, nodes));
+    }
+    twgl.bindFramebufferInfo(gl, target);
     gl.pixelStorei(gl.PACK_ALIGNMENT, 1);
     // RGBA/FLOAT is the readback every float color buffer guarantees, RGBA16F or RGBA32F (feedback).
     const raw = new Float32Array(CAPTURE_W * CAPTURE_H * 4);
     gl.getError();
     gl.readPixels(x, y, CAPTURE_W, CAPTURE_H, gl.RGBA, gl.FLOAT, raw);
     const error = gl.getError();
+    if (redraw) freeTarget(gl, target);
     if (error !== gl.NO_ERROR) {
       throw new Error(`FLOAT readPixels failed (gl ${error}). Float readback is required; not falling back to RGBA8.`);
     }
@@ -514,6 +525,8 @@ export class Engine {
     this.viewer = canvas;
     this.viewerCtx = canvas?.getContext("2d") ?? null;
     if (!canvas) return;
+    // A fixed session draws once, so fullscreen or a panel resize has to ask for the picture again.
+    new ResizeObserver(() => this.refreshFixed(false)).observe(canvas);
     canvas.addEventListener("pointerdown", (event) => {
       this.pointer.down = true;
       this.track(canvas, event);
@@ -547,6 +560,24 @@ export class Engine {
       },
       { passive: false },
     );
+  }
+
+  /** What the viewer shows, drawn again at 1080p and encoded as a PNG. The viewer's save button. */
+  saveFrame(): Promise<Blob | null> {
+    const gl = this.gl;
+    const canvas = gl?.canvas as HTMLCanvasElement | undefined;
+    const nodes = useGraph.getState().nodes;
+    const node = nodes.find((item) => item.selected) ?? nodes.find((item) => item.id === "out");
+    if (!gl || gl.isContextLost() || !canvas || !node) return Promise.resolve(null);
+    const size = { w: OUT_W, h: OUT_H };
+    const out = document.createElement("canvas");
+    const ctx = out.getContext("2d");
+    if (!ctx) return Promise.resolve(null);
+    // The hidden canvas keeps no buffer between frames, so this draws and copies out in one task.
+    // The next presented frame sizes it back to the viewer.
+    fitCanvas(canvas, { w: Math.max(canvas.width, size.w), h: Math.max(canvas.height, size.h) });
+    this.paintInto(node, nodes, out, ctx, size, "snapshot");
+    return new Promise((resolve) => out.toBlob(resolve, "image/png"));
   }
 
   /** What the audio texture reads (src/audio.ts owns the mic or file behind it); null is the built-in test signal. */
@@ -630,7 +661,7 @@ export class Engine {
       return;
     }
     this.programs.set(hash(wrapped.source), compiled.info);
-    this.install(id, node.data.draft, compiled.info, parsed.feedback);
+    this.install(id, node.data.draft, compiled.info, parsed.feedback, { w: COOK_W, h: COOK_H });
     useGraph.getState().applyCompile(id, { status: "live", error: null, committed: node.data.draft });
     this.sweepPrograms(useGraph.getState().nodes);
   }
@@ -784,7 +815,8 @@ export class Engine {
     }
     const feedback = node.data.kind === "shader" && !bypass && parsed.feedback;
     const prev = node.data.kind === "shader" && !bypass ? parsed.prev : [];
-    const rt = this.install(node.id, source, info, feedback || this.prevWanted.has(node.id));
+    const size = node.data.kind === "out" ? { w: OUT_W, h: OUT_H } : { w: COOK_W, h: COOK_H };
+    const rt = this.install(node.id, source, info, feedback || this.prevWanted.has(node.id), size);
     const target = rt.back ?? rt.front;
     const previous = rt.front;
     this.draw(info, target, this.uniformsFor(node, parsed.params, feedback, previous, edges, nodes, prev));
@@ -1187,7 +1219,8 @@ export class Engine {
     prev: ParsedShader["prev"] = [],
   ): Record<string, unknown> {
     const values: Record<string, unknown> = {
-      iResolution: [COOK_W, COOK_H, 1],
+      // The node's own target: the cook size, or 1080p for out.
+      iResolution: [previous.width, previous.height, 1],
       iTime: this.time,
       iTimeDelta: this.dt,
       iFrame: this.frame - 1,
@@ -1207,8 +1240,8 @@ export class Engine {
       const before = prev.find((item) => item.channel === channel);
       if (feedback && channel === 3) {
         tex = previous.attachments[0] as WebGLTexture;
-        w = COOK_W;
-        h = COOK_H;
+        w = previous.width;
+        h = previous.height;
       } else if (before) {
         const last = this.previousFrame(node, before.label, nodes);
         if (last) {
@@ -1259,7 +1292,7 @@ export class Engine {
     if (node.data.kind === "audio" && this.audioTex) return { tex: this.audioTex, w: 512, h: 2 };
     const rt = this.runtime.get(node.id);
     if (!rt) return null;
-    return { tex: rt.front.attachments[0] as WebGLTexture, w: COOK_W, h: COOK_H };
+    return { tex: rt.front.attachments[0] as WebGLTexture, w: rt.front.width, h: rt.front.height };
   }
 
   private blitPreviews(nodes: PNode[]): void {
@@ -1434,15 +1467,15 @@ export class Engine {
   }
 
   /** `feedback` here means double-buffered: @feedback itself, or read by someone's @prev. */
-  private install(id: string, source: string, info: twgl.ProgramInfo, feedback: boolean): Runtime {
+  private install(id: string, source: string, info: twgl.ProgramInfo, feedback: boolean, size: { w: number; h: number }): Runtime {
     const existing = this.runtime.get(id);
     if (existing) {
       existing.source = source;
       existing.info = info;
       if (feedback && !existing.back && this.gl) {
         freeTarget(this.gl, existing.front);
-        existing.front = this.makeTarget(COOK_W, COOK_H, true);
-        existing.back = this.makeTarget(COOK_W, COOK_H, true);
+        existing.front = this.makeTarget(size.w, size.h, true);
+        existing.back = this.makeTarget(size.w, size.h, true);
       }
       if (!feedback && existing.back && this.gl) {
         freeTarget(this.gl, existing.back);
@@ -1453,8 +1486,8 @@ export class Engine {
     const created: Runtime = {
       source,
       info,
-      front: this.makeTarget(COOK_W, COOK_H, feedback),
-      back: feedback ? this.makeTarget(COOK_W, COOK_H, true) : null,
+      front: this.makeTarget(size.w, size.h, feedback),
+      back: feedback ? this.makeTarget(size.w, size.h, true) : null,
       cooked: 0,
     };
     this.runtime.set(id, created);
