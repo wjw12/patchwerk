@@ -1,0 +1,8 @@
+{
+  "viewer": "out",
+  "nodes": [
+    { "id": "sdf", "kind": "shader", "label": "sdf scene", "shader": "sdf-scene.glsl", "x": 40, "y": 80 },
+    { "id": "out", "kind": "out", "label": "out", "x": 360, "y": 80 }
+  ],
+  "edges": [{ "source": "sdf", "target": "out", "targetHandle": "ch0" }]
+}
