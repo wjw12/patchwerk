@@ -6,6 +6,7 @@ import { COPY_FS } from "./sources";
 
 export const COOK_W = 960;
 export const COOK_H = 540;
+const BLOOM_LEVELS = 5;
 
 export interface CloudDraw {
   p: WebGLTexture;
@@ -39,7 +40,7 @@ export class ImageOps {
   private copy: twgl.ProgramInfo;
   private tri: twgl.BufferInfo;
   private nodes = new Map<string, twgl.FramebufferInfo>();
-  private pyramid: { bright: Level; mid: Level; far: Level; blur: Level } | null = null;
+  private pyramid: { down: Level[]; up: Level[] } | null = null;
   /** One scratch target per use, so thumbs and the viewer do not reallocate each other every frame. */
   private scratch = new Map<"thumb" | "viewer", twgl.FramebufferInfo>();
 
@@ -115,52 +116,34 @@ export class ImageOps {
   }
 
   bloomPass(id: string, source: WebGLTexture, sourceW: number, sourceH: number, pars: BloomPars): { tex: WebGLTexture; w: number; h: number } {
-    const pyramid = this.levels();
+    const { down, up } = this.levels();
     const out = this.nodeTarget(id, COOK_W, COOK_H);
-    const common = {
-      uScene: source,
-      uThreshold: pars.threshold,
-      uFill: pars.fill,
-      uIntensity: pars.intensity,
-      uPregamma: pars.pregamma,
-    };
-    this.shade(this.bloom, pyramid.bright.target, true, {
-      ...common,
-      uTex: source,
-      uTexel: [1 / sourceW, 1 / sourceH],
-      uPass: 0,
+    const common = { uThreshold: pars.threshold, uFill: pars.fill, uPregamma: pars.pregamma };
+    // Down: source -> down[0] (threshold) -> down[1] -> ... each a 13-tap filter of the level above.
+    let tex = source;
+    let w = sourceW;
+    let h = sourceH;
+    down.forEach((level, index) => {
+      this.shade(this.bloom, level.target, true, { ...common, uTex: tex, uTexel: [1 / w, 1 / h], uPass: index === 0 ? 0 : 1 });
+      tex = level.target.attachments[0] as WebGLTexture;
+      w = level.w;
+      h = level.h;
     });
-    this.shade(this.bloom, pyramid.mid.target, true, {
-      ...common,
-      uTex: pyramid.bright.target.attachments[0],
-      uTexel: [1 / pyramid.bright.w, 1 / pyramid.bright.h],
-      uPass: 1,
-    });
-    this.shade(this.bloom, pyramid.far.target, true, {
-      ...common,
-      uTex: pyramid.mid.target.attachments[0],
-      uTexel: [1 / pyramid.mid.w, 1 / pyramid.mid.h],
-      uPass: 1,
-    });
-    this.shade(this.bloom, pyramid.blur.target, true, {
-      ...common,
-      uTex: pyramid.far.target.attachments[0],
-      uTexel: [1 / pyramid.far.w, 1 / pyramid.far.h],
-      uPass: 2,
-    });
-    this.shade(
-      this.copy,
-      pyramid.blur.target,
-      false,
-      { uTex: pyramid.bright.target.attachments[0] },
-      true,
-    );
-    this.shade(this.bloom, out, true, {
-      uScene: source,
-      uTex: pyramid.blur.target.attachments[0],
-      uIntensity: pars.intensity,
-      uPass: 3,
-    });
+    // Up: up[i] = mix(down[i], tent(up[i + 1]), fill), starting from the smallest down level.
+    for (let index = up.length - 1; index >= 0; index--) {
+      const level = up[index]!;
+      this.shade(this.bloom, level.target, true, {
+        ...common,
+        uTex: tex,
+        uTexel: [1 / w, 1 / h],
+        uBase: down[index]!.target.attachments[0],
+        uPass: 2,
+      });
+      tex = level.target.attachments[0] as WebGLTexture;
+      w = level.w;
+      h = level.h;
+    }
+    this.shade(this.bloom, out, true, { uScene: source, uTex: tex, uIntensity: pars.intensity, uPass: 3 });
     return { tex: out.attachments[0] as WebGLTexture, w: COOK_W, h: COOK_H };
   }
 
@@ -170,15 +153,16 @@ export class ImageOps {
     return { tex: out.attachments[0] as WebGLTexture, w: COOK_W, h: COOK_H };
   }
 
-  private levels(): { bright: Level; mid: Level; far: Level; blur: Level } {
+  /** Half, quarter, ... a 32nd of the cook size; `up` has one level fewer than `down`. */
+  private levels(): { down: Level[]; up: Level[] } {
     if (this.pyramid) return this.pyramid;
     const make = (w: number, h: number): Level => ({ w, h, target: this.allocate(w, h) });
-    this.pyramid = {
-      bright: make(480, 270),
-      mid: make(240, 135),
-      far: make(120, 67),
-      blur: make(480, 270),
-    };
+    const down: Level[] = [];
+    for (let shift = 1; shift <= BLOOM_LEVELS; shift++) {
+      down.push(make(Math.max(1, Math.round(COOK_W / 2 ** shift)), Math.max(1, Math.round(COOK_H / 2 ** shift))));
+    }
+    const up = down.slice(0, -1).map((level) => make(level.w, level.h));
+    this.pyramid = { down, up };
     return this.pyramid;
   }
 
