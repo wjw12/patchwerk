@@ -20,7 +20,10 @@ import { wireStyle, type Family } from "./family";
 import { createOpData, type OpData, type Par } from "./ops/catalog";
 import { keepsWire, mergeParams, nodeOutlet, useGraph, type GraphState, type NodeData, type PNode, type ShaderData } from "./store";
 
+/** This client's graph edits. The only origin the undo manager records. */
 const LOCAL = Symbol("local");
+/** This client's bookkeeping writes: seeding a room, dropping a losing wire. Never undone. */
+const QUIET = Symbol("quiet");
 
 interface NodeRec {
   kind: NodeData["kind"];
@@ -70,6 +73,52 @@ let ready = false;
 let applying = false;
 let pullQueued = false;
 
+// ---------------------------------------------------------------- undo
+//
+// Undo walks back this client's own graph edits only; someone else's edits are never
+// undone. Shader text is not in here: CodeMirror keeps its own text undo. `committed` is
+// left out so a compile is never an undo step.
+
+const GESTURE_GAP = 400;
+const history = new Y.UndoManager([nodesMap, codeMap, paramsMap, edgesMap], {
+  trackedOrigins: new Set([LOCAL]),
+  captureTimeout: GESTURE_GAP,
+});
+
+export const useHistory = create<{ canUndo: boolean; canRedo: boolean }>(() => ({ canUndo: false, canRedo: false }));
+const readHistory = () => useHistory.setState({ canUndo: history.canUndo(), canRedo: history.canRedo() });
+history.on("stack-item-added", readHistory);
+history.on("stack-item-popped", readHistory);
+history.on("stack-cleared", readHistory);
+
+export function undo(): void {
+  if (ready) history.undo();
+}
+
+export function redo(): void {
+  if (ready) history.redo();
+}
+
+/**
+ * A pointer gesture (node drag, slider scrub, wire drag) is one undo step however long it
+ * takes. The release is deferred a tick so the drop's final write still joins the gesture.
+ */
+export function beginGesture(): void {
+  history.stopCapturing();
+  history.captureTimeout = Number.POSITIVE_INFINITY;
+}
+
+export function endGesture(): void {
+  window.setTimeout(() => {
+    history.captureTimeout = GESTURE_GAP;
+  }, 0);
+}
+
+/** The next edit starts a new undo step. */
+export function breakUndo(): void {
+  history.stopCapturing();
+}
+
 export function getCode(id: string): Y.Text | null {
   return codeMap.get(id) ?? null;
 }
@@ -117,7 +166,7 @@ export function connect(room: string): void {
     engine.onPointer = (cursor) => publishCursor(awareness, cursor);
   }
   doc.on("update", (_update: Uint8Array, origin: unknown) => {
-    if (origin !== LOCAL) schedulePull();
+    if (origin !== LOCAL && origin !== QUIET) schedulePull();
   });
   useGraph.subscribe(push);
 }
@@ -128,7 +177,7 @@ function seed(state: GraphState): void {
   doc.transact(() => {
     for (const node of state.nodes) writeNode(node);
     for (const edge of state.edges) writeEdge(edge);
-  }, LOCAL);
+  }, QUIET);
 }
 
 function push(state: GraphState, prev: GraphState): void {
@@ -361,7 +410,7 @@ function pruneEdges(nodes: PNode[]): Edge[] {
       style: wireStyle(source.data.family),
     });
   }
-  if (drop.length) doc.transact(() => drop.forEach((id) => edgesMap.delete(id)), LOCAL);
+  if (drop.length) doc.transact(() => drop.forEach((id) => edgesMap.delete(id)), QUIET);
   return kept;
 }
 

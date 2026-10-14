@@ -2,6 +2,7 @@ import { Background, BackgroundVariant, Controls, MiniMap, ReactFlow, ReactFlowP
 import { useEffect, useState } from "react";
 import { CHROME } from "../family";
 import { isValidConnection, useGraph, type PNode } from "../store";
+import { beginGesture, breakUndo, endGesture, redo, undo } from "../sync";
 import { OpNode } from "./OpNode";
 import { Palette } from "./Palette";
 
@@ -28,16 +29,45 @@ function Stage() {
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
-      const target = event.target as HTMLElement | null;
-      const typing = target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable);
+      const typing = isTyping(event.target);
       if ((event.key === "Tab" || event.key === "`") && !typing) {
         event.preventDefault();
         openPalette(window.innerWidth / 2, window.innerHeight / 2);
       }
       if (event.key === "Escape") closePalette();
+      // Text fields and CodeMirror keep their own Ctrl+Z.
+      if (typing) return;
+      const mod = event.ctrlKey || event.metaKey;
+      const key = event.key.toLowerCase();
+      if (mod && key === "z") {
+        event.preventDefault();
+        if (event.shiftKey) redo();
+        else undo();
+        return;
+      }
+      if (mod && key === "y") {
+        event.preventDefault();
+        redo();
+        return;
+      }
+      // A key that edits the graph (Delete) is its own undo step, apart from a drag just before it.
+      breakUndo();
+    };
+    const onFocus = (event: FocusEvent) => {
+      if (isTyping(event.target)) breakUndo();
     };
     window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
+    window.addEventListener("pointerdown", beginGesture, true);
+    window.addEventListener("pointerup", endGesture, true);
+    window.addEventListener("pointercancel", endGesture, true);
+    window.addEventListener("focusin", onFocus);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      window.removeEventListener("pointerdown", beginGesture, true);
+      window.removeEventListener("pointerup", endGesture, true);
+      window.removeEventListener("pointercancel", endGesture, true);
+      window.removeEventListener("focusin", onFocus);
+    };
   }, [openPalette, closePalette]);
 
   return (
@@ -81,6 +111,11 @@ function Stage() {
       <Palette />
     </div>
   );
+}
+
+function isTyping(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) return false;
+  return target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.tagName === "SELECT" || target.isContentEditable;
 }
 
 export type { Connection, Edge };
