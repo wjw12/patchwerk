@@ -1,5 +1,5 @@
 import { useReactFlow } from "@xyflow/react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useLayoutEffect, useMemo, useRef, useState } from "react";
 import { FAMILIES, type Family } from "../family";
 import { paletteEntries } from "../ops/catalog";
 import { useGraph } from "../store";
@@ -13,12 +13,13 @@ export function Palette() {
   const [family, setFamily] = useState<Family | "all">("all");
   const box = useRef<HTMLInputElement>(null);
 
-  useEffect(() => {
+  // Focus in the same task that opened the palette, so a key typed right after Tab or a
+  // double-click lands in the filter instead of being dropped.
+  useLayoutEffect(() => {
     if (!palette) return;
     setQuery("");
     setFamily("all");
-    const id = window.setTimeout(() => box.current?.focus(), 0);
-    return () => window.clearTimeout(id);
+    box.current?.focus();
   }, [palette]);
 
   const entries = useMemo(() => {
