@@ -523,6 +523,9 @@ export class Engine {
   }
 
   private prunedFor: PNode[] | null = null;
+  /** absTime of the previous cook, and whether this cook moved past it. */
+  private cookedAt = Number.NaN;
+  private advanced = true;
 
   /** Deleted nodes give back their GPU targets, programs and per-node maps. */
   private prune(nodes: PNode[]): void {
@@ -581,6 +584,8 @@ export class Engine {
   private cookOps(nodes: PNode[], edges: { source: string; target: string; targetHandle?: string | null }[]): void {
     this.chopPrev = new Map(this.chopNow);
     this.chopDone = new Set();
+    this.advanced = this.time !== this.cookedAt;
+    this.cookedAt = this.time;
     const order = cookOrder(
       nodes.map((node) => node.id),
       (id) => nodes.find((node) => node.id === id)?.data.family ?? "TOP",
@@ -657,7 +662,9 @@ export class Engine {
     this.chopNow.set(node.id, sample);
     this.chopDone.add(node.id);
     const ring = this.chopHist.get(node.id) ?? [];
-    ring.push(sample);
+    // Paused, time did not move: refresh the newest sample instead of growing a flat line.
+    if (this.advanced || ring.length === 0) ring.push(sample);
+    else ring[ring.length - 1] = sample;
     if (ring.length > 120) ring.shift();
     this.chopHist.set(node.id, ring);
     return error;
