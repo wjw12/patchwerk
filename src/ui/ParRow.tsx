@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { useLive } from "../engine/live";
 import { useGraph, type Par } from "../store";
 
@@ -35,6 +36,8 @@ function NumberRow({ id, par }: { id: string; par: Extract<Par, { kind: "number"
   const shown = expressing ? (live?.cooked ?? par.value) : par.value;
   const error = expressing ? (live?.error ?? null) : null;
   const step = par.step ?? Math.max((par.max - par.min) / 200, 0.001);
+  // What the number box shows while it is being typed in; null shows the parameter.
+  const [typed, setTyped] = useState<string | null>(null);
   return (
     <label
       className={`par-row${error ? " is-error" : ""}`}
@@ -64,9 +67,19 @@ function NumberRow({ id, par }: { id: string; par: Extract<Par, { kind: "number"
       <input
         className="par-num"
         type="number"
-        value={Number.isFinite(shown) ? round(shown) : 0}
+        value={typed ?? (Number.isFinite(shown) ? round(shown) : 0)}
         disabled={expressing}
-        onChange={(event) => setOpPar(id, par.name, { value: Number(event.target.value) })}
+        onChange={(event) => {
+          const raw = event.target.value;
+          setTyped(raw);
+          // An empty or partial box ("", "-") is not a number yet; only commit real ones.
+          const value = Number(raw);
+          if (raw.trim() !== "" && Number.isFinite(value)) setOpPar(id, par.name, { value });
+        }}
+        onBlur={() => setTyped(null)}
+        onKeyDown={(event) => {
+          if (event.key === "Enter") event.currentTarget.blur();
+        }}
       />
       <button
         type="button"
