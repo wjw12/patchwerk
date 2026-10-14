@@ -161,7 +161,7 @@ class Parser {
     if (this.src[this.i] !== ")") throw new ExprError("expected ')' after op name");
     this.i += 1;
     this.skip();
-    if (this.src[this.i] !== "[") throw new ExprError("expected ['chan1']");
+    if (this.src[this.i] !== "[") throw new ExprError("expected ['chan1'] (or chan2, ...)");
     this.i += 1;
     this.skip();
     const channel = this.string();

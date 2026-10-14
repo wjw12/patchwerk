@@ -1,9 +1,40 @@
 {
   "viewer": "out",
   "nodes": [
-    { "id": "sway", "kind": "op", "family": "CHOP", "type": "lfo", "label": "sway", "x": 40, "y": 24, "pars": { "frequency": 0.07, "amp": 1.6 } },
-    { "id": "e_sway", "kind": "op", "family": "CHOP", "type": "null", "label": "e_sway", "x": 250, "y": 24 },
-    { "id": "breath", "kind": "op", "family": "CHOP", "type": "lfo", "label": "breath", "x": 40, "y": 150, "pars": { "frequency": 0.21 } },
+    {
+      "id": "sway",
+      "kind": "op",
+      "family": "CHOP",
+      "type": "lfo",
+      "label": "sway",
+      "x": 40,
+      "y": 24,
+      "pars": {
+        "frequency": 0.07,
+        "amp": 1.6
+      }
+    },
+    {
+      "id": "e_sway",
+      "kind": "op",
+      "family": "CHOP",
+      "type": "null",
+      "label": "e_sway",
+      "x": 250,
+      "y": 24
+    },
+    {
+      "id": "breath",
+      "kind": "op",
+      "family": "CHOP",
+      "type": "lfo",
+      "label": "breath",
+      "x": 40,
+      "y": 150,
+      "pars": {
+        "frequency": 0.21
+      }
+    },
     {
       "id": "math_breath",
       "kind": "op",
@@ -12,11 +43,36 @@
       "label": "math_breath",
       "x": 250,
       "y": 150,
-      "pars": { "from1": -1, "from2": 1, "to1": 0.15, "to2": 0.6 }
+      "pars": {
+        "from1": -1,
+        "from2": 1,
+        "to1": 0.15,
+        "to2": 0.6
+      }
     },
-    { "id": "e_breath", "kind": "op", "family": "CHOP", "type": "null", "label": "e_breath", "x": 460, "y": 150 },
-
-    { "id": "ring_gen", "kind": "op", "family": "POP", "type": "pointgen", "label": "ring_gen", "x": 40, "y": 320, "pars": { "shape": "circle", "n": 3000, "s": 1.7 } },
+    {
+      "id": "e_breath",
+      "kind": "op",
+      "family": "CHOP",
+      "type": "null",
+      "label": "e_breath",
+      "x": 460,
+      "y": 150
+    },
+    {
+      "id": "ring_gen",
+      "kind": "op",
+      "family": "POP",
+      "type": "pointgen",
+      "label": "ring_gen",
+      "x": 40,
+      "y": 320,
+      "pars": {
+        "shape": "circle",
+        "n": 3000,
+        "s": 1.7
+      }
+    },
     {
       "id": "ring_noise",
       "kind": "op",
@@ -25,7 +81,15 @@
       "label": "ring_noise",
       "x": 250,
       "y": 320,
-      "pars": { "period": 0.18, "harmon": 2, "amp": 0.22, "t4d": { "mode": "expression", "expr": "absTime.seconds * 0.2" } }
+      "pars": {
+        "period": 0.18,
+        "harmon": 2,
+        "amp": 0.22,
+        "t4d": {
+          "mode": "expression",
+          "expr": "absTime.seconds * 0.2"
+        }
+      }
     },
     {
       "id": "ring_mix",
@@ -35,7 +99,13 @@
       "label": "ring_mix",
       "x": 460,
       "y": 320,
-      "pars": { "oper": "aaddbmultc", "scopeA": "P", "scopeB": "Noise", "scopeC": "1", "result": "P" }
+      "pars": {
+        "oper": "aaddbmultc",
+        "scopeA": "P",
+        "scopeB": "Noise",
+        "scopeC": "1",
+        "result": "P"
+      }
     },
     {
       "id": "ring",
@@ -45,10 +115,29 @@
       "label": "ring",
       "x": 670,
       "y": 320,
-      "pars": { "rx": 72, "ry": -18, "rz": { "mode": "expression", "expr": "absTime.seconds * 14" } }
+      "pars": {
+        "rx": 72,
+        "ry": -18,
+        "rz": {
+          "mode": "expression",
+          "expr": "absTime.seconds * 14"
+        }
+      }
     },
-
-    { "id": "core_gen", "kind": "op", "family": "POP", "type": "pointgen", "label": "core_gen", "x": 40, "y": 470, "pars": { "shape": "sphere", "n": 1200, "s": 0.45 } },
+    {
+      "id": "core_gen",
+      "kind": "op",
+      "family": "POP",
+      "type": "pointgen",
+      "label": "core_gen",
+      "x": 40,
+      "y": 470,
+      "pars": {
+        "shape": "sphere",
+        "n": 1200,
+        "s": 0.45
+      }
+    },
     {
       "id": "core_noise",
       "kind": "op",
@@ -60,8 +149,14 @@
       "pars": {
         "period": 0.35,
         "harmon": 1,
-        "amp": { "mode": "expression", "expr": "op('e_breath')['chan1']" },
-        "t4d": { "mode": "expression", "expr": "absTime.seconds * 0.35" }
+        "amp": {
+          "mode": "expression",
+          "expr": "op('e_breath')['chan1']"
+        },
+        "t4d": {
+          "mode": "expression",
+          "expr": "absTime.seconds * 0.35"
+        }
       }
     },
     {
@@ -72,9 +167,28 @@
       "label": "core_mix",
       "x": 460,
       "y": 470,
-      "pars": { "oper": "aaddbmultc", "scopeA": "P", "scopeB": "Noise", "scopeC": "1", "result": "P" }
+      "pars": {
+        "oper": "aaddbmultc",
+        "scopeA": "P",
+        "scopeB": "Noise",
+        "scopeC": "1",
+        "result": "P"
+      }
     },
-    { "id": "halo_gen", "kind": "op", "family": "POP", "type": "pointgen", "label": "halo_gen", "x": 40, "y": 600, "pars": { "shape": "circle", "n": 900, "s": 0.95 } },
+    {
+      "id": "halo_gen",
+      "kind": "op",
+      "family": "POP",
+      "type": "pointgen",
+      "label": "halo_gen",
+      "x": 40,
+      "y": 600,
+      "pars": {
+        "shape": "circle",
+        "n": 900,
+        "s": 0.95
+      }
+    },
     {
       "id": "halo",
       "kind": "op",
@@ -83,9 +197,23 @@
       "label": "halo",
       "x": 250,
       "y": 600,
-      "pars": { "rx": -58, "rz": { "mode": "expression", "expr": "absTime.seconds * -40" } }
+      "pars": {
+        "rx": -58,
+        "rz": {
+          "mode": "expression",
+          "expr": "absTime.seconds * -40"
+        }
+      }
     },
-    { "id": "core_merge", "kind": "op", "family": "POP", "type": "merge", "label": "core_merge", "x": 670, "y": 520 },
+    {
+      "id": "core_merge",
+      "kind": "op",
+      "family": "POP",
+      "type": "merge",
+      "label": "core_merge",
+      "x": 670,
+      "y": 520
+    },
     {
       "id": "core",
       "kind": "op",
@@ -94,11 +222,49 @@
       "label": "core",
       "x": 880,
       "y": 520,
-      "pars": { "ry": { "mode": "expression", "expr": "absTime.seconds * 25" } }
+      "pars": {
+        "ry": {
+          "mode": "expression",
+          "expr": "absTime.seconds * 25"
+        }
+      }
     },
-
-    { "id": "cam_far", "kind": "op", "family": "COMP", "type": "cam", "label": "cam_far", "x": 40, "y": 760, "pars": { "tx": { "mode": "expression", "expr": "op('e_sway')['chan1']" }, "ty": 0.8, "tz": 5.5, "fov": 45 } },
-    { "id": "cam_near", "kind": "op", "family": "COMP", "type": "cam", "label": "cam_near", "x": 250, "y": 760, "pars": { "tx": { "mode": "expression", "expr": "op('e_sway')['chan1'] * 0.5" }, "ty": 0.2, "tz": 4.2, "fov": 45 } },
+    {
+      "id": "cam_far",
+      "kind": "op",
+      "family": "COMP",
+      "type": "cam",
+      "label": "cam_far",
+      "x": 40,
+      "y": 760,
+      "pars": {
+        "tx": {
+          "mode": "expression",
+          "expr": "op('e_sway')['chan1']"
+        },
+        "ty": 0.8,
+        "tz": 5.5,
+        "fov": 45
+      }
+    },
+    {
+      "id": "cam_near",
+      "kind": "op",
+      "family": "COMP",
+      "type": "cam",
+      "label": "cam_near",
+      "x": 250,
+      "y": 760,
+      "pars": {
+        "tx": {
+          "mode": "expression",
+          "expr": "op('e_sway')['chan1'] * 0.5"
+        },
+        "ty": 0.2,
+        "tz": 4.2,
+        "fov": 45
+      }
+    },
     {
       "id": "mat_ring",
       "kind": "op",
@@ -107,7 +273,14 @@
       "label": "mat_ring",
       "x": 460,
       "y": 760,
-      "pars": { "scale": 1.6, "focus": 3, "alpha": 0.5, "colorr": 0.25, "colorg": 0.75, "colorb": 1.3 }
+      "pars": {
+        "scale": 1.6,
+        "focus": 3,
+        "alpha": 0.5,
+        "colorr": 0.25,
+        "colorg": 0.75,
+        "colorb": 1.3
+      }
     },
     {
       "id": "mat_core",
@@ -117,37 +290,218 @@
       "label": "mat_core",
       "x": 670,
       "y": 760,
-      "pars": { "scale": 2.2, "focus": 4, "alpha": 0.45, "colorr": 1.4, "colorg": 0.55, "colorb": 0.18 }
+      "pars": {
+        "scale": 2.2,
+        "focus": 4,
+        "alpha": 0.45,
+        "colorr": 1.4,
+        "colorg": 0.55,
+        "colorb": 0.18
+      }
     },
-    { "id": "geo_ring", "kind": "op", "family": "COMP", "type": "geo", "label": "geo_ring", "x": 40, "y": 880, "pars": { "pop": "ring", "mat": "mat_ring", "cam": "cam_far" } },
-    { "id": "geo_core", "kind": "op", "family": "COMP", "type": "geo", "label": "geo_core", "x": 250, "y": 880, "pars": { "pop": "core", "mat": "mat_core", "cam": "cam_near" } },
-
-    { "id": "render_ring", "kind": "op", "family": "TOP", "type": "render", "label": "render_ring", "x": 40, "y": 1000, "pars": { "geo": "geo_ring" } },
-    { "id": "render_core", "kind": "op", "family": "TOP", "type": "render", "label": "render_core", "x": 40, "y": 1160, "pars": { "geo": "geo_core" } },
-    { "id": "layers", "kind": "shader", "label": "layers", "shader": "mixer.glsl", "x": 280, "y": 1060, "params": { "uA": 1, "uB": 1, "uMode": 0 } },
-    { "id": "bloom", "kind": "op", "family": "TOP", "type": "bloom", "label": "bloom", "x": 520, "y": 1060, "pars": { "threshold": 0.05, "fill": 0.15, "intensity": 1.3 } },
-    { "id": "sky", "kind": "shader", "label": "sky", "shader": "warp.glsl", "x": 520, "y": 1220, "params": { "uScale": 2.2, "uSpeed": 0.08, "uTint": "#203060" } },
-    { "id": "comp", "kind": "shader", "label": "comp", "shader": "mixer.glsl", "x": 760, "y": 1100, "params": { "uA": 1, "uB": 0.1, "uMode": 1 } },
-    { "id": "out", "kind": "out", "label": "out", "x": 1000, "y": 1120 }
+    {
+      "id": "geo_ring",
+      "kind": "op",
+      "family": "COMP",
+      "type": "geo",
+      "label": "geo_ring",
+      "x": 40,
+      "y": 880,
+      "pars": {
+        "pop": "ring",
+        "mat": "mat_ring"
+      }
+    },
+    {
+      "id": "geo_core",
+      "kind": "op",
+      "family": "COMP",
+      "type": "geo",
+      "label": "geo_core",
+      "x": 250,
+      "y": 880,
+      "pars": {
+        "pop": "core",
+        "mat": "mat_core"
+      }
+    },
+    {
+      "id": "render_ring",
+      "kind": "op",
+      "family": "TOP",
+      "type": "render",
+      "label": "render_ring",
+      "x": 40,
+      "y": 1000,
+      "pars": {
+        "geometry": "geo_ring",
+        "camera": "cam_far"
+      }
+    },
+    {
+      "id": "render_core",
+      "kind": "op",
+      "family": "TOP",
+      "type": "render",
+      "label": "render_core",
+      "x": 40,
+      "y": 1160,
+      "pars": {
+        "geometry": "geo_core",
+        "camera": "cam_near"
+      }
+    },
+    {
+      "id": "layers",
+      "kind": "shader",
+      "label": "layers",
+      "shader": "mixer.glsl",
+      "x": 280,
+      "y": 1060,
+      "params": {
+        "uA": 1,
+        "uB": 1,
+        "uMode": 0
+      }
+    },
+    {
+      "id": "bloom",
+      "kind": "op",
+      "family": "TOP",
+      "type": "bloom",
+      "label": "bloom",
+      "x": 520,
+      "y": 1060,
+      "pars": {
+        "threshold": 0.05,
+        "fill": 0.15,
+        "intensity": 1.3
+      }
+    },
+    {
+      "id": "sky",
+      "kind": "shader",
+      "label": "sky",
+      "shader": "warp.glsl",
+      "x": 520,
+      "y": 1220,
+      "params": {
+        "uScale": 2.2,
+        "uSpeed": 0.08,
+        "uTint": "#203060"
+      }
+    },
+    {
+      "id": "comp",
+      "kind": "shader",
+      "label": "comp",
+      "shader": "mixer.glsl",
+      "x": 760,
+      "y": 1100,
+      "params": {
+        "uA": 1,
+        "uB": 0.1,
+        "uMode": 1
+      }
+    },
+    {
+      "id": "out",
+      "kind": "out",
+      "label": "out",
+      "x": 1000,
+      "y": 1120
+    }
   ],
   "edges": [
-    { "source": "sway", "target": "e_sway", "targetHandle": "in0" },
-    { "source": "breath", "target": "math_breath", "targetHandle": "in0" },
-    { "source": "math_breath", "target": "e_breath", "targetHandle": "in0" },
-    { "source": "ring_gen", "target": "ring_noise", "targetHandle": "in0" },
-    { "source": "ring_noise", "target": "ring_mix", "targetHandle": "in0" },
-    { "source": "ring_mix", "target": "ring", "targetHandle": "in0" },
-    { "source": "core_gen", "target": "core_noise", "targetHandle": "in0" },
-    { "source": "core_noise", "target": "core_mix", "targetHandle": "in0" },
-    { "source": "halo_gen", "target": "halo", "targetHandle": "in0" },
-    { "source": "core_mix", "target": "core_merge", "targetHandle": "in0" },
-    { "source": "halo", "target": "core_merge", "targetHandle": "in1" },
-    { "source": "core_merge", "target": "core", "targetHandle": "in0" },
-    { "source": "render_ring", "target": "layers", "targetHandle": "ch0" },
-    { "source": "render_core", "target": "layers", "targetHandle": "ch1" },
-    { "source": "layers", "target": "bloom", "targetHandle": "in0" },
-    { "source": "bloom", "target": "comp", "targetHandle": "ch0" },
-    { "source": "sky", "target": "comp", "targetHandle": "ch1" },
-    { "source": "comp", "target": "out", "targetHandle": "ch0" }
+    {
+      "source": "sway",
+      "target": "e_sway",
+      "targetHandle": "in0"
+    },
+    {
+      "source": "breath",
+      "target": "math_breath",
+      "targetHandle": "in0"
+    },
+    {
+      "source": "math_breath",
+      "target": "e_breath",
+      "targetHandle": "in0"
+    },
+    {
+      "source": "ring_gen",
+      "target": "ring_noise",
+      "targetHandle": "in0"
+    },
+    {
+      "source": "ring_noise",
+      "target": "ring_mix",
+      "targetHandle": "in0"
+    },
+    {
+      "source": "ring_mix",
+      "target": "ring",
+      "targetHandle": "in0"
+    },
+    {
+      "source": "core_gen",
+      "target": "core_noise",
+      "targetHandle": "in0"
+    },
+    {
+      "source": "core_noise",
+      "target": "core_mix",
+      "targetHandle": "in0"
+    },
+    {
+      "source": "halo_gen",
+      "target": "halo",
+      "targetHandle": "in0"
+    },
+    {
+      "source": "core_mix",
+      "target": "core_merge",
+      "targetHandle": "in0"
+    },
+    {
+      "source": "halo",
+      "target": "core_merge",
+      "targetHandle": "in1"
+    },
+    {
+      "source": "core_merge",
+      "target": "core",
+      "targetHandle": "in0"
+    },
+    {
+      "source": "render_ring",
+      "target": "layers",
+      "targetHandle": "ch0"
+    },
+    {
+      "source": "render_core",
+      "target": "layers",
+      "targetHandle": "ch1"
+    },
+    {
+      "source": "layers",
+      "target": "bloom",
+      "targetHandle": "in0"
+    },
+    {
+      "source": "bloom",
+      "target": "comp",
+      "targetHandle": "ch0"
+    },
+    {
+      "source": "sky",
+      "target": "comp",
+      "targetHandle": "ch1"
+    },
+    {
+      "source": "comp",
+      "target": "out",
+      "targetHandle": "ch0"
+    }
   ]
 }

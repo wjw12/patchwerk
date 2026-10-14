@@ -1,7 +1,7 @@
 import type { Edge } from "@xyflow/react";
 import { rfType, wireStyle, type Family } from "./family";
 import { parseShader, patchShaderParam, type ShaderParam } from "./engine/wrap";
-import { applyParOverrides, createOpData, type ParOverride } from "./ops/catalog";
+import { applyParOverrides, createOpData, migrateLegacyRenders, type ParOverride } from "./ops/catalog";
 import type { AudioData, OutData, PNode, ShaderData } from "./store";
 
 const shaders = import.meta.glob("./ops/*.glsl", {
@@ -37,6 +37,11 @@ export function buildGraph(file: GraphFile): { nodes: PNode[]; edges: Edge[]; vi
   if (!Array.isArray(file.nodes) || file.nodes.length === 0) throw new Error("graph has no nodes");
   const viewer = file.viewer ?? "out";
   const nodes = file.nodes.map((node) => toNode(node, node.id === viewer));
+  const saved = new Map(file.nodes.map((node) => [node.id, node]));
+  migrateLegacyRenders(nodes, (id, name) => {
+    const value = saved.get(id)?.pars?.[name];
+    return typeof value === "string" ? value : null;
+  });
   if (!nodes.some((node) => node.id === viewer)) throw new Error(`graph viewer "${viewer}" is not a node`);
   const byId = new Map(nodes.map((node) => [node.id, node]));
   const edges = (file.edges ?? []).map((edge) => {

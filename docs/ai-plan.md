@@ -168,7 +168,7 @@ Conventions shared by all tools:
 
 - **`node`** arguments take a label (`bloom`, `cam1`) or an id; a label match wins. Labels are what `op('label')` and name pars use, so prefer labels. Unknown node → error listing the labels that exist.
 - **Inlets** are named: shader TOPs `ch0`..`ch3` for each `iChannelN` the code reads (channels taken by `@feedback`/`@prev` are not inlets), `out` has `ch0`, ops have `in0`..`in{N-1}` where N is the catalog's `inputs`. **Outlet** is always `out`; MAT and COMP nodes have none.
-- **Families never mix on a wire.** A TOP cannot feed a POP. Cross-family links are parameters: `geo.pop / geo.mat / geo.cam` and `render.geo` hold a label; number pars hold expressions that read CHOPs.
+- **Families never mix on a wire.** A TOP cannot feed a POP. Cross-family links are parameters: `geo.pop / geo.mat` hold a label; `render.geometry`, `render.camera` and `render.lights` are patterns; number pars hold expressions that read CHOP channels.
 - The result of a mutating tool always ends with the one-line graph delta it caused (`+ node noise1 POP/noise`, `~ cam1.fov 45 → 78`, `+ wire bloom.out → grade.ch0`, `- wire streak.out → grade.ch0`), so the transcript doubles as a log.
 - Tools marked read-only (`get_graph`, `read_shader`, `view`) may be called in parallel; the browser still runs them one at a time.
 
@@ -227,7 +227,7 @@ Browser side: snapshot `edges`, `updateDraft`, `engine.compileNow(id)`, diff `ed
 
 ### `set_param`
 
-> Set one parameter on one node. A number sets a constant; `{expr}` makes the parameter cook from an expression every frame; a string picks a menu option or sets a name parameter (geo.pop, geo.mat, geo.cam, render.geo); `#rrggbb` sets a color uniform. Values outside the slider range are accepted and flagged. Integer parameters are rounded.
+> Set one parameter on one node. A number sets a constant; `{expr}` makes the parameter cook from an expression every frame; a string picks a menu option or sets a name parameter (geo.pop, geo.mat, render.geometry, render.camera, feedback.top); `#rrggbb` sets a color uniform. Values outside the slider range are accepted and flagged. Integer parameters are rounded.
 
 Input:
 ```ts
@@ -328,11 +328,11 @@ A patch is a dataflow graph of operators. Operators belong to a family:
 - COMP: cam (camera), geo (binds a pop, a mat and a cam).
 
 A wire only connects two operators of the same family. Everything else is a parameter:
-- geo.pop, geo.mat, geo.cam and render.geo hold another node's label.
+- geo.pop and geo.mat hold another node's label. render.geometry and render.camera are patterns.
 - Any number parameter can be an expression evaluated every frame: absTime.seconds, op('lfo1')['chan1'], + - * / ( ), sin cos abs floor fract sqrt min max pow mod clamp, pi. Nothing else (not Python, not GLSL).
 - Labels are unique and are how nodes refer to each other. Renaming follows expressions and name parameters, not `// @prev` lines in shaders.
 
-The recipe for points on screen: POP chain → geo.pop; a point MAT → geo.mat; a cam → geo.cam; render.geo = that geo; render → bloom and shader TOPs → out.ch0.
+The recipe for points on screen: POP chain → geo.pop; a point MAT → geo.mat; a cam COMP; render.geometry names the geo; render.camera names the cam; render → bloom and other TOPs → out.ch0.
 
 Cooking walks the wires: a node recooks when an input, a parameter or time changed. Cycles are refused. The two legal loops are inside shaders: `// @feedback` (iChannel3 is this node's previous frame) and `// @prev iChannelN label` (iChannelN is another TOP's last frame; `self` means this node). Each goes on its own line, and that channel is then not an inlet.
 

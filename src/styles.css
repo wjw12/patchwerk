@@ -310,6 +310,37 @@ button:hover { border-color: #8d7cff; }
 .par-row.is-error .par-expr { color: #ffb4b4; border-color: #d45b5b; }
 .par-row em { grid-column: 1 / -1; color: #ffb4b4; font-style: normal; font-size: 11px; }
 .par-row button.is-on { color: #f0a040; border-color: #f0a040; }
+.par-row select.is-missing { color: #ffb4b4; border-color: #d45b5b; }
+.par-help { margin: 6px 10px 2px; color: #8a90a8; font-size: 11px; line-height: 1.4; }
+/* Label, the fields, then a swatch (color) or nothing, on the same columns as a slider row. */
+.par-vector { grid-template-columns: 72px minmax(0, 1fr) 28px; }
+.vec-fields { display: grid; gap: 4px; }
+.vec-field {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  background: #1c2030;
+  border: 1px solid #34384a;
+  border-radius: 4px;
+}
+.vec-field:focus-within { border-color: #8a90a8; }
+.vec-field b {
+  padding: 0 5px;
+  align-self: stretch;
+  display: flex;
+  align-items: center;
+  font: 600 10px ui-monospace, monospace;
+  color: #8a90a8;
+  cursor: ew-resize;
+  user-select: none;
+  touch-action: none;
+}
+.par-vector .vec-field input { border: 0; background: transparent; padding: 3px 4px 3px 0; min-width: 0; font-variant-numeric: tabular-nums; }
+.vec-field.is-expr input { color: #8fd0ff; font-family: ui-monospace, monospace; font-size: 11px; }
+.vec-field.is-expr b { color: #8fd0ff; cursor: default; }
+.vec-field.is-error { border-color: #d45b5b; }
+.vec-field.is-error input { color: #ffb4b4; }
+.par-vector .par-color { padding: 0; height: 22px; border: 1px solid #34384a; border-radius: 4px; background: none; }
 .params header .rename { width: 140px; color: #ebe7df; font-weight: 600; }
 .params header em { margin-left: auto; font-style: normal; }
 

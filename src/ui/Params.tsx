@@ -1,7 +1,9 @@
 import { useEffect, useState } from "react";
 import { shaderNumberPar } from "../engine/wrap";
-import { useGraph, type ShaderData } from "../store";
-import { ColorRow, ParRow, type ParSetter } from "./ParRow";
+import { DESCRIBE } from "../ops/catalog";
+import { useGraph, type OpData, type ShaderData } from "../store";
+import { groupPars, parLabel } from "./par-groups";
+import { ColorRow, ParRow, VectorRow, type ParSetter } from "./ParRow";
 
 export function Params() {
   const node = useGraph((state) => state.nodes.find((item) => item.selected));
@@ -30,11 +32,12 @@ export function Params() {
         )}
         {op && <em>{op.type}</em>}
       </header>
+      {op && DESCRIBE[`${op.family}:${op.type}`] && <p className="par-help">{DESCRIBE[`${op.family}:${op.type}`]}</p>}
       {shader ? (
         <ShaderControls id={node?.id ?? ""} data={shader} />
       ) : op ? (
         op.pars.length ? (
-          op.pars.map((par) => <ParRow key={par.name} id={node?.id ?? ""} par={par} />)
+          <OpControls id={node?.id ?? ""} data={op} />
         ) : (
           <p className="empty">No parameters. This operator copies its input.</p>
         )
@@ -42,6 +45,20 @@ export function Params() {
         <p className="empty">{node ? "This operator has no parameters." : "Select an operator."}</p>
       )}
     </section>
+  );
+}
+
+function OpControls({ id, data }: { id: string; data: OpData }) {
+  return (
+    <>
+      {groupPars(data.pars).map((item) =>
+        item.kind === "vector" ? (
+          <VectorRow key={item.pars[0]?.name} id={id} label={item.label} pars={item.pars} color={item.color} />
+        ) : (
+          <ParRow key={item.par.name} id={id} par={item.par} label={parLabel(item.par.name, data.type)} />
+        ),
+      )}
+    </>
   );
 }
 

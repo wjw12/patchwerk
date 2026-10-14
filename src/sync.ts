@@ -17,7 +17,7 @@ import { engine } from "./engine/engine";
 import { decodeShaderParam, encodeShaderParam, parseShader } from "./engine/wrap";
 import { identity } from "./room";
 import { wireStyle, type Family } from "./family";
-import { createOpData, type OpData, type Par } from "./ops/catalog";
+import { createOpData, migrateLegacyRenders, type OpData, type Par } from "./ops/catalog";
 import { keepsWire, mergeParams, nodeOutlet, uniqueLabel, useGraph, type GraphState, type NodeData, type PNode, type ShaderData } from "./store";
 
 /** This client's graph edits. The only origin the undo manager records. */
@@ -341,11 +341,14 @@ function pull(): void {
     lastLoaded = loaded;
     before.clear();
   }
-  const nodes: PNode[] = [];
+  const built: PNode[] = [];
   nodesMap.forEach((rec, id) => {
-    const old = before.get(id);
-    const next = buildNode(id, rec, old);
-    nodes.push(old && sameNode(old, next) ? old : next);
+    built.push(buildNode(id, rec, before.get(id)));
+  });
+  migrateLegacyRenders(built, storedText);
+  const nodes = built.map((next) => {
+    const old = before.get(next.id);
+    return old && sameNode(old, next) ? old : next;
   });
   nodes.sort((a, b) => (a.id < b.id ? -1 : 1));
   relabelClashes(nodes);
@@ -399,6 +402,12 @@ function encodeOpPar(par: Par): string {
   if (par.kind === "number") return `n:${par.mode}:${par.value}:${encodeURIComponent(par.expr)}`;
   if (par.kind === "menu") return `m:${encodeURIComponent(par.value)}`;
   return `t:${encodeURIComponent(par.value)}`;
+}
+
+function storedText(id: string, name: string): string | null {
+  const raw = paramsMap.get(`${id}/${name}`);
+  if (typeof raw !== "string" || !raw.startsWith("t:")) return null;
+  return decodeURIComponent(raw.slice(2));
 }
 
 function decodePars(pars: Par[], id: string): Par[] {

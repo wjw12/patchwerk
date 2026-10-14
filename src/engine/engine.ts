@@ -6,7 +6,7 @@ import { ExprError, type ExprEnv } from "./expr";
 import { camera, orbitCamera } from "./math";
 import { PopBank, type PopOut } from "./pop";
 import type { Light, PhongLook } from "./mat";
-import { COOK_H, COOK_W, freeTarget, ImageOps, OUT_H, OUT_W } from "./render";
+import { COOK_H, COOK_W, freeTarget, ImageOps, OUT_H, OUT_W, type CloudDraw } from "./render";
 import { clearLive } from "./live";
 import { resolvePars, type Resolved } from "./resolve";
 import { encodeBytes, publish } from "../probe";
@@ -38,7 +38,7 @@ export interface FrameStats {
 
 export type Snapshot =
   | { kind: "image"; time: number; png: string; stats: FrameStats | null }
-  | { kind: "chop"; time: number; now: number | null; history: number[] };
+  | { kind: "chop"; time: number; now: number | null; channels: number[]; history: number[] };
 
 type Picture = { x: number; y: number; w: number; h: number };
 type Output = { tex: WebGLTexture; w: number; h: number };
@@ -92,9 +92,10 @@ export class Engine {
   private pops: PopBank | null = null;
   private imageOps: ImageOps | null = null;
   private images = new Map<string, { tex: WebGLTexture; w: number; h: number }>();
-  private chopNow = new Map<string, number>();
-  private chopPrev = new Map<string, number>();
-  private chopHist = new Map<string, number[]>();
+  private chopNow = new Map<string, Float32Array>();
+  private chopPrev = new Map<string, Float32Array>();
+  /** One ring per channel, oldest sample first. */
+  private chopHist = new Map<string, number[][]>();
   private chopDone = new Set<string>();
   private resolved = new Map<string, Resolved>();
   /** How the last render drew its points; POP previews and the orbit viewer draw the same way. */
@@ -171,7 +172,9 @@ export class Engine {
     const node = nodes.find((item) => item.id === id);
     if (!node) throw new Error("the node is gone");
     if (node.data.family === "CHOP") {
-      return { kind: "chop", time: this.time, now: this.chopNow.get(id) ?? null, history: [...(this.chopHist.get(id) ?? [])] };
+      const now = this.chopNow.get(id);
+      const hist = this.chopHist.get(id) ?? [];
+      return { kind: "chop", time: this.time, now: now?.[0] ?? null, channels: now ? [...now] : [], history: [...(hist[0] ?? [])] };
     }
     const gl = this.gl;
     const host = gl?.canvas as HTMLCanvasElement | undefined;
@@ -359,7 +362,11 @@ export class Engine {
   resetClock(): void {
     this.time = 0;
     this.frame = 0;
+    this.cookedAt = Number.NaN;
+    this.chopNow.clear();
+    this.chopPrev.clear();
     this.chopHist.clear();
+    this.imageOps?.dropHolds();
     this.skipAdvance = true;
     const clock = document.getElementById("abs-time");
     if (clock) clock.textContent = "absTime  0.00 s";
@@ -768,6 +775,7 @@ export class Engine {
     this.chopDone = new Set();
     this.advanced = this.time !== this.cookedAt;
     this.cookedAt = this.time;
+    if (this.advanced) this.imageOps?.commitHolds();
     this.cookSerial += 1;
     this.prevWanted = this.prevTargets(nodes);
     const order = cookOrder(
@@ -791,11 +799,13 @@ export class Engine {
       else if (node.data.family === "POP") cookError = this.cookPopNode(node, nodes, edges, resolved);
       else if (node.data.type === "render") cookError = this.cookRenderNode(node, nodes, resolved);
       else if (node.data.type === "bloom") cookError = this.cookBloomNode(node, nodes, edges, resolved);
+      else if (isImageOp(node.data.type)) cookError = this.cookImageNode(node, nodes, edges, resolved);
       // A TOP that cannot cook shows black, not its last good image.
       if (cookError && node.data.family === "TOP" && this.imageOps) this.images.set(node.id, this.imageOps.blank(node.id));
       const error = [parError, cookError].filter((item) => item).join("\n") || null;
       this.note(node, error);
     }
+    this.captureFeedback(nodes);
   }
 
   private cookShader(
@@ -870,26 +880,40 @@ export class Engine {
     resolved: Resolved,
   ): string | null {
     if (node.data.kind !== "op") return null;
-    const a = this.chopSample(this.wired(edges, nodes, node.id, "in0"));
-    const b = this.chopSample(this.wired(edges, nodes, node.id, "in1"));
-    let sample = 0;
+    const a = this.chopChannels(this.wired(edges, nodes, node.id, "in0"));
+    const b = this.chopChannels(this.wired(edges, nodes, node.id, "in1"));
+    const prev = this.chopPrev.get(node.id) ?? null;
+    let channels: Float32Array<ArrayBufferLike> = Float32Array.of(0);
     let error: string | null = null;
-    if (node.data.bypass) sample = a ?? b ?? 0;
+    if (node.data.bypass) channels = new Float32Array(a ?? b ?? Float32Array.of(0));
     else {
       try {
-        sample = cookChop(node.data.type, resolved.num, resolved.menu, { a, b, spectrum: this.spectrum }, this.time);
+        channels = cookChop(
+          node.data.type,
+          resolved.num,
+          resolved.menu,
+          { a, b, prev, dt: this.advanced ? this.dt : 0, spectrum: this.spectrum },
+          this.time,
+        );
       } catch (err) {
         error = err instanceof Error ? err.message : "chop failed";
       }
     }
-    this.chopNow.set(node.id, sample);
+    this.chopNow.set(node.id, channels);
     this.chopDone.add(node.id);
-    const ring = this.chopHist.get(node.id) ?? [];
-    // Paused, time did not move: refresh the newest sample instead of growing a flat line.
-    if (this.advanced || ring.length === 0) ring.push(sample);
-    else ring[ring.length - 1] = sample;
-    if (ring.length > 120) ring.shift();
-    this.chopHist.set(node.id, ring);
+    const hist = this.chopHist.get(node.id) ?? [];
+    while (hist.length < channels.length) hist.push([]);
+    if (hist.length > channels.length) hist.length = channels.length;
+    for (let i = 0; i < channels.length; i++) {
+      const ring = hist[i] ?? [];
+      hist[i] = ring;
+      const sample = channels[i] ?? 0;
+      // Paused, time did not move: refresh the newest sample instead of growing a flat line.
+      if (this.advanced || ring.length === 0) ring.push(sample);
+      else ring[ring.length - 1] = sample;
+      if (ring.length > 120) ring.shift();
+    }
+    this.chopHist.set(node.id, hist);
     return error;
   }
 
@@ -916,31 +940,39 @@ export class Engine {
   private cookRenderNode(node: PNode, nodes: PNode[], resolved: Resolved): string | null {
     if (!this.imageOps || node.data.kind !== "op") return "render is not ready";
     if (node.data.bypass) {
-      this.images.set(node.id, this.imageOps.render(node.id, null));
+      this.images.set(node.id, this.imageOps.render(node.id, []));
       return null;
     }
-    const geo = this.byLabel(nodes, resolved.text.geo ?? "");
-    if (!geo || geo.data.kind !== "op" || geo.data.type !== "geo") return `geo "${resolved.text.geo ?? ""}" is missing`;
-    const geoResolved = this.resolved.get(geo.id);
-    const pop = this.byLabel(nodes, geoResolved?.text.pop ?? "");
-    const mat = this.byLabel(nodes, geoResolved?.text.mat ?? "");
-    const cam = this.byLabel(nodes, geoResolved?.text.cam ?? "");
-    if (!pop || pop.data.kind !== "op" || pop.data.family !== "POP") return "geo pop is missing";
-    const cloud = this.pops?.get(pop.id);
-    const position = cloud?.attrs.get("P");
-    if (!cloud || !position) return "geo pop has no P";
-    const matResolved = mat?.data.kind === "op" ? this.resolved.get(mat.id) : undefined;
-    const camResolved = cam?.data.kind === "op" ? this.resolved.get(cam.id) : undefined;
-    const scale = matResolved?.num.scale ?? 6;
-    const focus = matResolved?.num.focus ?? 4;
-    const alpha = matResolved?.num.alpha ?? 0.9;
-    const color: [number, number, number] = [matResolved?.num.colorr ?? 1, matResolved?.num.colorg ?? 1, matResolved?.num.colorb ?? 1];
-    const phong = mat?.data.kind === "op" && mat.data.type === "phong" ? phongLook(matResolved?.num ?? {}) : undefined;
-    const lights = phong ? this.lightsFor(nodes, resolved.text.lights ?? "*") : undefined;
-    this.cloudLook = { scale, focus, alpha, phong, lights };
-    const camNum = camResolved?.num;
-    const mats = camera(camNum?.tx ?? 0, camNum?.ty ?? 0, camNum?.tz ?? 5, camNum?.fov ?? 45, COOK_W / COOK_H, [camNum?.lookx ?? 0, camNum?.looky ?? 0, camNum?.lookz ?? 0]);
-    this.images.set(node.id, this.imageOps.render(node.id, { p: position, n: cloud.n, ...mats, scale, focus, alpha, color, phong, lights }));
+    const geos = this.geosFor(nodes, geometryPattern(resolved));
+    if (geos.length === 0) return `geometry "${geometryPattern(resolved) || "(empty)"}" matches nothing`;
+    const cameraPattern = resolved.text.camera ?? "";
+    const shared = cameraPattern ? this.camsFor(nodes, cameraPattern)[0] : undefined;
+    if (cameraPattern && !shared) return `camera "${cameraPattern}" matches nothing`;
+    const lights = this.lightsFor(nodes, resolved.text.lights ?? "*");
+    const layers: CloudDraw[] = [];
+    for (const geo of geos) {
+      const geoResolved = this.resolved.get(geo.id);
+      const pop = this.byLabel(nodes, geoResolved?.text.pop ?? "");
+      const mat = this.byLabel(nodes, geoResolved?.text.mat ?? "");
+      const cam = shared ?? this.byLabel(nodes, geoResolved?.text.cam ?? "");
+      if (!pop || pop.data.kind !== "op" || pop.data.family !== "POP") return `${geo.data.label} pop is missing`;
+      if (!cam || cam.data.kind !== "op" || cam.data.type !== "cam") return `${geo.data.label} camera is missing`;
+      const cloud = this.pops?.get(pop.id);
+      const position = cloud?.attrs.get("P");
+      if (!cloud || !position) return `${geo.data.label} pop has no P`;
+      const matResolved = mat?.data.kind === "op" ? this.resolved.get(mat.id) : undefined;
+      const camNum = this.resolved.get(cam.id)?.num;
+      const scale = matResolved?.num.scale ?? 6;
+      const focus = matResolved?.num.focus ?? 4;
+      const alpha = matResolved?.num.alpha ?? 0.9;
+      const color: [number, number, number] = [matResolved?.num.colorr ?? 1, matResolved?.num.colorg ?? 1, matResolved?.num.colorb ?? 1];
+      const phong = mat?.data.kind === "op" && mat.data.type === "phong" ? phongLook(matResolved?.num ?? {}) : undefined;
+      const mats = camera(camNum?.tx ?? 0, camNum?.ty ?? 0, camNum?.tz ?? 5, camNum?.fov ?? 45, COOK_W / COOK_H, [camNum?.lookx ?? 0, camNum?.looky ?? 0, camNum?.lookz ?? 0]);
+      layers.push({ p: position, n: cloud.n, ...mats, scale, focus, alpha, color, phong, lights: phong ? lights : undefined });
+    }
+    const first = layers[0];
+    if (first) this.cloudLook = { scale: first.scale, focus: first.focus, alpha: first.alpha, phong: first.phong, lights: first.lights };
+    this.images.set(node.id, this.imageOps.render(node.id, layers));
     return null;
   }
 
@@ -970,21 +1002,149 @@ export class Engine {
     return null;
   }
 
+  private cookImageNode(
+    node: PNode,
+    nodes: PNode[],
+    edges: { source: string; target: string; targetHandle?: string | null }[],
+    resolved: Resolved,
+  ): string | null {
+    if (!this.imageOps || node.data.kind !== "op") return "image cook is not ready";
+    const type = node.data.type;
+    const input = this.wired(edges, nodes, node.id, "in0");
+    const image = input ? this.outputTexture(input) : null;
+    const other = this.wired(edges, nodes, node.id, "in1");
+    const imageB = other ? this.outputTexture(other) : null;
+    if (node.data.bypass) {
+      if (type === "noise" || type === "ramp") {
+        this.images.set(node.id, this.imageOps.blank(node.id));
+        return null;
+      }
+      if (!image) return `${type} has no input`;
+      this.images.set(node.id, this.imageOps.copyImage(node.id, image.tex));
+      return null;
+    }
+    if (type === "level") {
+      if (!image) return "level has no input";
+      this.images.set(
+        node.id,
+        this.imageOps.level(node.id, image.tex, {
+          invert: resolved.menu.invert === "on" ? 1 : 0,
+          blacklevel: resolved.num.blacklevel ?? 0,
+          brightness: resolved.num.brightness ?? 0,
+          gamma: resolved.num.gamma ?? 1,
+          contrast: resolved.num.contrast ?? 1,
+          opacity: resolved.num.opacity ?? 1,
+        }),
+      );
+      return null;
+    }
+    if (type === "blur") {
+      if (!image) return "blur has no input";
+      this.images.set(node.id, this.imageOps.blur(node.id, image.tex, resolved.num.size ?? 8, extendMode(resolved.menu.extend), resolved.menu.type === "box"));
+      return null;
+    }
+    if (type === "composite") {
+      if (!image || !imageB) return "composite needs in0 and in1";
+      const swapped = resolved.menu.swap === "on";
+      const a = swapped ? imageB.tex : image.tex;
+      const b = swapped ? image.tex : imageB.tex;
+      this.images.set(node.id, this.imageOps.composite(node.id, a, b, compositeOp(resolved.menu.operand)));
+      return null;
+    }
+    if (type === "transform") {
+      if (!image) return "transform has no input";
+      this.images.set(
+        node.id,
+        this.imageOps.transform(node.id, image.tex, {
+          tx: resolved.num.tx ?? 0,
+          ty: resolved.num.ty ?? 0,
+          rotate: resolved.num.rotate ?? 0,
+          sx: resolved.num.sx ?? 1,
+          sy: resolved.num.sy ?? 1,
+          extend: extendMode(resolved.menu.extend),
+          bg: [resolved.num.bgr ?? 0, resolved.num.bgg ?? 0, resolved.num.bgb ?? 0],
+        }),
+      );
+      return null;
+    }
+    if (type === "feedback") {
+      const reset = (resolved.num.reset ?? 0) >= 0.5;
+      if (reset) {
+        if (!image) return "feedback reset has no input";
+        this.images.set(node.id, this.imageOps.copyImage(node.id, image.tex, true));
+        return null;
+      }
+      const target = this.byLabel(nodes, resolved.text.top ?? "");
+      if (!target || target.data.family !== "TOP") return `feedback top "${resolved.text.top ?? ""}" is missing`;
+      const held = this.imageOps.held(node.id);
+      // No history yet: black. The input is only the reset image. The target is snapshotted after this cook.
+      if (!held) {
+        this.images.set(node.id, this.imageOps.blank(node.id, true));
+        return null;
+      }
+      this.images.set(node.id, this.imageOps.copyImage(node.id, held.tex, true));
+      return null;
+    }
+    if (type === "noise") {
+      this.images.set(
+        node.id,
+        this.imageOps.noise(node.id, {
+          seed: resolved.num.seed ?? 0,
+          period: resolved.num.period ?? 0.25,
+          harmon: resolved.num.harmon ?? 1,
+          spread: resolved.num.spread ?? 2,
+          gain: resolved.num.gain ?? 0.5,
+          amp: resolved.num.amp ?? 0.5,
+          offset: resolved.num.offset ?? 0.5,
+          t4d: resolved.num.t4d ?? 0,
+          mono: resolved.menu.mono === "on",
+        }),
+      );
+      return null;
+    }
+    if (type === "ramp") {
+      const kind = resolved.menu.type === "horizontal" ? 1 : resolved.menu.type === "radial" ? 2 : 0;
+      const extend = resolved.menu.extend === "repeat" ? 1 : resolved.menu.extend === "mirror" ? 2 : 0;
+      this.images.set(
+        node.id,
+        this.imageOps.ramp(node.id, {
+          type: kind,
+          phase: resolved.num.phase ?? 0,
+          period: resolved.num.period ?? 1,
+          extend,
+          color0: [resolved.num.color0r ?? 0, resolved.num.color0g ?? 0, resolved.num.color0b ?? 0],
+          color1: [resolved.num.color1r ?? 1, resolved.num.color1g ?? 1, resolved.num.color1b ?? 1],
+        }),
+      );
+      return null;
+    }
+    return `unknown TOP ${type}`;
+  }
+
+  /** After the cook, each feedback TOP stores the current frame of the TOP it names. */
+  private captureFeedback(nodes: PNode[]): void {
+    if (!this.imageOps) return;
+    for (const node of nodes) {
+      if (node.data.kind !== "op" || node.data.type !== "feedback") continue;
+      const target = this.byLabel(nodes, this.resolved.get(node.id)?.text.top ?? "");
+      const image = target ? this.outputTexture(target) : null;
+      if (image) this.imageOps.hold(node.id, image.tex, image.w, image.h);
+    }
+  }
+
   private exprEnv(nodes: PNode[]): ExprEnv {
     return {
       seconds: this.time,
       op: (name, channel) => {
-        if (channel !== "chan1") throw new ExprError(`['${channel}'] is not cooked`);
+        const index = channelIndex(channel);
+        if (index == null) throw new ExprError(`['${channel}'] is not a channel (chan1, chan2, ...)`);
         const found = nodes.find((node) => node.data.label === name);
         if (!found) throw new ExprError(`op('${name}') is missing`);
         if (found.data.kind !== "op" || found.data.family !== "CHOP") throw new ExprError(`op('${name}') is not a CHOP`);
-        if (this.chopDone.has(found.id)) {
-          const value = this.chopNow.get(found.id);
-          if (value != null) return value;
-        }
-        const prev = this.chopPrev.get(found.id);
-        if (prev != null) return prev;
-        throw new ExprError(`op('${name}') has no chan1 yet`);
+        const live = this.chopDone.has(found.id) ? this.chopNow.get(found.id) : undefined;
+        const value = live ?? this.chopPrev.get(found.id);
+        if (!value || index >= value.length) throw new ExprError(`op('${name}') has no ${channel}`);
+        return value[index] ?? 0;
       },
     };
   }
@@ -1007,7 +1167,7 @@ export class Engine {
     return nodes.find((node) => node.id === edge.source);
   }
 
-  private chopSample(node: PNode | undefined): number | null {
+  private chopChannels(node: PNode | undefined): Float32Array | null {
     if (!node || node.data.kind !== "op" || node.data.family !== "CHOP") return null;
     return this.chopNow.get(node.id) ?? null;
   }
@@ -1047,7 +1207,7 @@ export class Engine {
       if (node.data.family !== "CHOP") continue;
       const ctx = this.previews.get(node.id);
       if (!ctx) continue;
-      this.stroke(ctx, this.chopHist.get(node.id) ?? [], "#3dcf8a");
+      this.stroke(ctx, this.chopHist.get(node.id) ?? []);
     }
   }
 
@@ -1120,9 +1280,9 @@ export class Engine {
     return null;
   }
 
-  private paintScope(dest: HTMLCanvasElement, ctx: CanvasRenderingContext2D, samples: number[], size: { w: number; h: number }): void {
+  private paintScope(dest: HTMLCanvasElement, ctx: CanvasRenderingContext2D, samples: number[][], size: { w: number; h: number }): void {
     fitCanvas(dest, size);
-    this.stroke(ctx, samples, "#3dcf8a");
+    this.stroke(ctx, samples);
   }
 
   private paintPoints(
@@ -1160,30 +1320,35 @@ export class Engine {
     ctx.drawImage(canvas, 0, gl.drawingBufferHeight - h, w, h, 0, 0, ctx.canvas.width, ctx.canvas.height);
   }
 
-  private stroke(ctx: CanvasRenderingContext2D, samples: number[], color: string): void {
+  private stroke(ctx: CanvasRenderingContext2D, series: number[][]): void {
     const w = ctx.canvas.width;
     const h = ctx.canvas.height;
     ctx.clearRect(0, 0, w, h);
     ctx.fillStyle = "#05060a";
     ctx.fillRect(0, 0, w, h);
-    if (samples.length < 2) return;
+    const colors = ["#3dcf8a", "#7aa2ff", "#ffb020", "#ff6b8a", "#c084fc", "#5eead4", "#f9a8d4", "#e7e5e4"];
     let min = -1;
     let max = 1;
-    for (const sample of samples) {
-      min = Math.min(min, sample);
-      max = Math.max(max, sample);
+    for (const samples of series) {
+      for (const sample of samples) {
+        min = Math.min(min, sample);
+        max = Math.max(max, sample);
+      }
     }
     const span = max - min || 1;
-    ctx.strokeStyle = color;
     ctx.lineWidth = 1.5;
-    ctx.beginPath();
-    samples.forEach((sample, index) => {
-      const x = (index / (samples.length - 1)) * (w - 2) + 1;
-      const y = h - 2 - ((sample - min) / span) * (h - 4);
-      if (index === 0) ctx.moveTo(x, y);
-      else ctx.lineTo(x, y);
+    series.forEach((samples, channel) => {
+      if (samples.length < 2) return;
+      ctx.strokeStyle = colors[channel % colors.length] ?? "#3dcf8a";
+      ctx.beginPath();
+      samples.forEach((sample, index) => {
+        const x = (index / (samples.length - 1)) * (w - 2) + 1;
+        const y = h - 2 - ((sample - min) / span) * (h - 4);
+        if (index === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+      });
+      ctx.stroke();
     });
-    ctx.stroke();
   }
 
   private popForMat(mat: PNode, nodes: PNode[]): string | null {
@@ -1198,17 +1363,17 @@ export class Engine {
   /** The lights pattern of the render that draws this MAT, so its preview is lit the same way. */
   private lightsForMat(mat: PNode, nodes: PNode[]): string {
     const geo = nodes.find((node) => node.data.kind === "op" && node.data.type === "geo" && this.resolved.get(node.id)?.text.mat === mat.data.label);
-    const render = geo && nodes.find((node) => node.data.kind === "op" && node.data.type === "render" && this.resolved.get(node.id)?.text.geo === geo.data.label);
+    const render = geo && nodes.find((node) => node.data.kind === "op" && node.data.type === "render" && this.geosFor(nodes, geometryPattern(this.resolved.get(node.id))).some((item) => item.id === geo.id));
     return (render && this.resolved.get(render.id)?.text.lights) ?? "*";
   }
 
   private popForCam(cam: PNode, nodes: PNode[]): string | null {
-    const geo = nodes.find((node) => {
-      if (node.data.kind !== "op" || node.data.type !== "geo") return false;
-      return this.resolved.get(node.id)?.text.cam === cam.data.label;
-    });
-    if (!geo) return null;
-    return this.popId(nodes, this.resolved.get(geo.id)?.text.pop ?? "");
+    const render = nodes.find((node) => node.data.kind === "op" && node.data.type === "render" && this.usesCam(node, cam, nodes));
+    const geo = render ? this.geosFor(nodes, geometryPattern(this.resolved.get(render.id)))[0] : undefined;
+    const legacy = nodes.find((node) => node.data.kind === "op" && node.data.type === "geo" && this.resolved.get(node.id)?.text.cam === cam.data.label);
+    const picked = geo ?? legacy;
+    if (!picked) return null;
+    return this.popId(nodes, this.resolved.get(picked.id)?.text.pop ?? "");
   }
 
   private popId(nodes: PNode[], label: string): string | null {
@@ -1221,11 +1386,29 @@ export class Engine {
     return nodes.find((item) => {
       if (item.data.kind !== "op" || item.data.type !== "render") return false;
       if (node.data.kind === "op" && node.data.type === "light") return matchesPattern(this.resolved.get(item.id)?.text.lights ?? "*", node.data.label);
-      const geo = this.byLabel(nodes, this.resolved.get(item.id)?.text.geo ?? "");
-      if (!geo || geo.data.kind !== "op" || geo.data.type !== "geo") return false;
-      if (node.data.type === "geo") return geo.id === node.id;
-      return this.resolved.get(geo.id)?.text.cam === node.data.label;
+      const geos = this.geosFor(nodes, geometryPattern(this.resolved.get(item.id)));
+      if (node.data.type === "geo") return geos.some((geo) => geo.id === node.id);
+      if (node.data.type === "cam") return this.usesCam(item, node, nodes);
+      return false;
     });
+  }
+
+  private geosFor(nodes: PNode[], pattern: string): PNode[] {
+    if (!pattern) return [];
+    return nodes.filter((node) => node.data.kind === "op" && node.data.type === "geo" && matchesPattern(pattern, node.data.label));
+  }
+
+  private camsFor(nodes: PNode[], pattern: string): PNode[] {
+    if (!pattern) return [];
+    return nodes.filter((node) => node.data.kind === "op" && node.data.type === "cam" && matchesPattern(pattern, node.data.label));
+  }
+
+  /** A render uses this cam when its camera pattern matches, or (legacy) the matched geo still stores `cam`. */
+  private usesCam(render: PNode, cam: PNode, nodes: PNode[]): boolean {
+    const resolved = this.resolved.get(render.id);
+    const pattern = resolved?.text.camera ?? "";
+    if (pattern) return matchesPattern(pattern, cam.data.label);
+    return this.geosFor(nodes, geometryPattern(resolved)).some((geo) => this.resolved.get(geo.id)?.text.cam === cam.data.label);
   }
 
   private unitPop(): string | null {
@@ -1824,6 +2007,37 @@ export const engine = new Engine();
 
 function isLight(node: PNode): boolean {
   return node.data.kind === "op" && node.data.family === "COMP" && node.data.type === "light";
+}
+
+const IMAGE_OPS = new Set(["level", "blur", "composite", "transform", "feedback", "noise", "ramp"]);
+
+function isImageOp(type: string): boolean {
+  return IMAGE_OPS.has(type);
+}
+
+/** `chan1` is index 0. Anything else is not a channel name. */
+function channelIndex(channel: string): number | null {
+  const match = /^chan(\d+)$/.exec(channel);
+  if (!match) return null;
+  const index = Number(match[1]) - 1;
+  return index >= 0 ? index : null;
+}
+
+function geometryPattern(resolved: { text: Record<string, string> } | undefined): string {
+  return resolved?.text.geometry ?? resolved?.text.geo ?? "*";
+}
+
+const EXTEND = { hold: 0, zero: 1, repeat: 2, mirror: 3 } as const;
+const COMPOSITE = { over: 0, add: 1, multiply: 2, subtract: 3, difference: 4, screen: 5, max: 6, min: 7 } as const;
+
+function extendMode(value: string | undefined): number {
+  if (value === "zero" || value === "repeat" || value === "mirror") return EXTEND[value];
+  return EXTEND.hold;
+}
+
+function compositeOp(value: string | undefined): number {
+  if (value && value in COMPOSITE) return COMPOSITE[value as keyof typeof COMPOSITE];
+  return COMPOSITE.over;
 }
 
 /** `*` is every light; otherwise labels separated by spaces or commas, each may use `*` as a wildcard. */

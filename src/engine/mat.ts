@@ -17,6 +17,8 @@ export interface PointDraw {
   target: twgl.FramebufferInfo;
   width: number;
   height: number;
+  /** False keeps what is already in the target, so a second geo adds instead of wiping the first. */
+  clear: boolean;
 }
 
 type Vec3 = [number, number, number];
@@ -52,6 +54,8 @@ export interface PhongDraw {
   target: twgl.FramebufferInfo;
   width: number;
   height: number;
+  /** False keeps color and depth, so a later phong tests against the geos already drawn. */
+  clear: boolean;
 }
 
 const MAX_LIGHTS = 8;
@@ -82,8 +86,10 @@ export class PointMat {
     gl.depthMask(false);
     gl.disable(gl.SCISSOR_TEST);
     gl.colorMask(true, true, true, true);
-    gl.clearColor(0, 0, 0, 1);
-    gl.clear(gl.COLOR_BUFFER_BIT);
+    if (args.clear) {
+      gl.clearColor(0, 0, 0, 1);
+      gl.clear(gl.COLOR_BUFFER_BIT);
+    }
     gl.enable(gl.BLEND);
     gl.blendFunc(gl.ONE, gl.ONE);
     gl.useProgram(this.info.program);
@@ -136,9 +142,11 @@ export class PhongMat {
     gl.depthFunc(gl.LESS);
     gl.depthMask(true);
     gl.colorMask(true, true, true, true);
-    gl.clearColor(0, 0, 0, 1);
-    gl.clearDepth(1);
-    gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+    if (args.clear) {
+      gl.clearColor(0, 0, 0, 1);
+      gl.clearDepth(1);
+      gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+    }
     const pos = new Float32Array(MAX_LIGHTS * 4);
     const axis = new Float32Array(MAX_LIGHTS * 4);
     const color = new Float32Array(MAX_LIGHTS * 4);

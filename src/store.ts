@@ -400,7 +400,7 @@ function applyOne(par: Par, name: string, patch: ParOverride & { text?: string; 
 }
 
 /**
- * Fills a new op's empty op-name fields (geo's pop/mat/cam, render's geo): the selected op if it
+ * Fills a new op's empty op-name fields (geo's pop/mat, feedback's top): the selected op if it
  * fits, else the only candidate, else the one that ends a chain, else the newest.
  */
 function guessRefs(pars: Par[], nodes: PNode[], edges: Edge[], selected: PNode | undefined): Par[] {
