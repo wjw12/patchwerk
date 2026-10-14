@@ -195,7 +195,9 @@ function validateExpr(expr: string): void {
       const found = nodes.find((node) => node.data.label === name);
       if (!found) throw new ExprError(`op('${name}') is missing; ${known}`);
       if (found.data.kind !== "op" || found.data.family !== "CHOP") throw new ExprError(`op('${name}') is a ${kindName(found.data)}, not a CHOP; ${known}`);
-      if (channel !== "chan1") throw new ExprError(`['${channel}'] is not a channel; chan1 is the only one`);
+      const index = /^chan(\d+)$/.exec(channel);
+      const n = index ? Number(index[1]) : 0;
+      if (!index || n < 1 || n > 8) throw new ExprError(`['${channel}'] is not a channel; use chan1..chan8`);
       return 0;
     },
   };
@@ -394,7 +396,7 @@ function refusal(source: PNode, target: PNode, inlet: string): string | null {
   const from = source.data;
   const to = target.data;
   if (source.id === target.id) return `${from.label} cannot feed itself; use // @feedback in a shader for a loop`;
-  if (!nodeOutlet(from)) return `${from.label} has no outlet; ${from.family === "MAT" ? "a MAT is used through geo.mat" : "a COMP is used through geo.cam, render.geo or render.lights"}`;
+  if (!nodeOutlet(from)) return `${from.label} has no outlet; ${from.family === "MAT" ? "a MAT is used through geo.mat" : "a COMP is used through render.geometry, render.camera or render.lights"}`;
   if (from.family !== to.family) return `families differ (${from.family} → ${to.family}); ${crossHint(from.family, to.family)}`;
   const inlets = nodeInlets(to);
   if (!inlets.includes(inlet)) return `${to.label} has no inlet ${inlet} (${inletHint(to, inlets)})`;

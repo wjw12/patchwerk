@@ -1,9 +1,42 @@
 {
   "viewer": "out",
   "nodes": [
-    { "id": "drift", "kind": "op", "family": "CHOP", "type": "lfo", "label": "drift", "x": 40, "y": 24, "pars": { "frequency": 0.09, "amp": 0.45 } },
-    { "id": "e_drift", "kind": "op", "family": "CHOP", "type": "null", "label": "e_drift", "x": 250, "y": 24 },
-    { "id": "tube_gen", "kind": "op", "family": "POP", "type": "pointgen", "label": "tube_gen", "x": 40, "y": 180, "pars": { "shape": "sphere", "n": 4096, "s": 1.3 } },
+    {
+      "id": "drift",
+      "kind": "op",
+      "family": "CHOP",
+      "type": "lfo",
+      "label": "drift",
+      "x": 40,
+      "y": 24,
+      "pars": {
+        "frequency": 0.09,
+        "amp": 0.45
+      }
+    },
+    {
+      "id": "e_drift",
+      "kind": "op",
+      "family": "CHOP",
+      "type": "null",
+      "label": "e_drift",
+      "x": 250,
+      "y": 24
+    },
+    {
+      "id": "tube_gen",
+      "kind": "op",
+      "family": "POP",
+      "type": "pointgen",
+      "label": "tube_gen",
+      "x": 40,
+      "y": 180,
+      "pars": {
+        "shape": "sphere",
+        "n": 4096,
+        "s": 1.3
+      }
+    },
     {
       "id": "tube_noise",
       "kind": "op",
@@ -12,7 +45,15 @@
       "label": "tube_noise",
       "x": 250,
       "y": 180,
-      "pars": { "period": 0.45, "harmon": 2, "amp": 0.4, "t4d": { "mode": "expression", "expr": "absTime.seconds * 0.1" } }
+      "pars": {
+        "period": 0.45,
+        "harmon": 2,
+        "amp": 0.4,
+        "t4d": {
+          "mode": "expression",
+          "expr": "absTime.seconds * 0.1"
+        }
+      }
     },
     {
       "id": "tube_mix",
@@ -22,7 +63,13 @@
       "label": "tube_mix",
       "x": 460,
       "y": 180,
-      "pars": { "oper": "aaddbmultc", "scopeA": "P", "scopeB": "Noise", "scopeC": "1", "result": "P" }
+      "pars": {
+        "oper": "aaddbmultc",
+        "scopeA": "P",
+        "scopeB": "Noise",
+        "scopeC": "1",
+        "result": "P"
+      }
     },
     {
       "id": "tube",
@@ -32,7 +79,13 @@
       "label": "tube",
       "x": 670,
       "y": 180,
-      "pars": { "sz": 7, "rz": { "mode": "expression", "expr": "absTime.seconds * 6" } }
+      "pars": {
+        "sz": 7,
+        "rz": {
+          "mode": "expression",
+          "expr": "absTime.seconds * 6"
+        }
+      }
     },
     {
       "id": "flycam",
@@ -43,13 +96,31 @@
       "x": 40,
       "y": 360,
       "pars": {
-        "tx": { "mode": "expression", "expr": "op('e_drift')['chan1']" },
-        "ty": { "mode": "expression", "expr": "cos(absTime.seconds * 0.5) * 0.3" },
-        "tz": { "mode": "expression", "expr": "6 - fract(absTime.seconds * 0.04) * 12" },
+        "tx": {
+          "mode": "expression",
+          "expr": "op('e_drift')['chan1']"
+        },
+        "ty": {
+          "mode": "expression",
+          "expr": "cos(absTime.seconds * 0.5) * 0.3"
+        },
+        "tz": {
+          "mode": "expression",
+          "expr": "6 - fract(absTime.seconds * 0.04) * 12"
+        },
         "fov": 78,
-        "lookx": { "mode": "expression", "expr": "op('e_drift')['chan1'] * -0.6" },
-        "looky": { "mode": "expression", "expr": "sin(absTime.seconds * 0.37) * 0.25" },
-        "lookz": { "mode": "expression", "expr": "4 - fract(absTime.seconds * 0.04) * 12" }
+        "lookx": {
+          "mode": "expression",
+          "expr": "op('e_drift')['chan1'] * -0.6"
+        },
+        "looky": {
+          "mode": "expression",
+          "expr": "sin(absTime.seconds * 0.37) * 0.25"
+        },
+        "lookz": {
+          "mode": "expression",
+          "expr": "4 - fract(absTime.seconds * 0.04) * 12"
+        }
       }
     },
     {
@@ -64,15 +135,68 @@
         "scale": 1.1,
         "focus": 7,
         "alpha": 0.5,
-        "colorr": { "mode": "expression", "expr": "0.55 + 0.35 * sin(absTime.seconds * 0.3)" },
+        "colorr": {
+          "mode": "expression",
+          "expr": "0.55 + 0.35 * sin(absTime.seconds * 0.3)"
+        },
         "colorg": 0.9,
         "colorb": 1.3
       }
     },
-    { "id": "geo1", "kind": "op", "family": "COMP", "type": "geo", "label": "geo1", "x": 460, "y": 360, "pars": { "pop": "tube", "mat": "mat1", "cam": "flycam" } },
-    { "id": "render", "kind": "op", "family": "TOP", "type": "render", "label": "render", "x": 40, "y": 500, "pars": { "geo": "geo1" } },
-    { "id": "bloom", "kind": "op", "family": "TOP", "type": "bloom", "label": "bloom", "x": 250, "y": 500, "pars": { "fill": 0.2, "threshold": 0.08, "intensity": 1.2 } },
-    { "id": "streak", "kind": "shader", "label": "streak", "shader": "trail.glsl", "x": 460, "y": 500, "params": { "uDecay": 0.84, "uZoom": 0.012, "uTwist": 0.002, "uKick": 0 } },
+    {
+      "id": "geo1",
+      "kind": "op",
+      "family": "COMP",
+      "type": "geo",
+      "label": "geo1",
+      "x": 460,
+      "y": 360,
+      "pars": {
+        "pop": "tube",
+        "mat": "mat1"
+      }
+    },
+    {
+      "id": "render",
+      "kind": "op",
+      "family": "TOP",
+      "type": "render",
+      "label": "render",
+      "x": 40,
+      "y": 500,
+      "pars": {
+        "geometry": "geo1",
+        "camera": "flycam"
+      }
+    },
+    {
+      "id": "bloom",
+      "kind": "op",
+      "family": "TOP",
+      "type": "bloom",
+      "label": "bloom",
+      "x": 250,
+      "y": 500,
+      "pars": {
+        "fill": 0.2,
+        "threshold": 0.08,
+        "intensity": 1.2
+      }
+    },
+    {
+      "id": "streak",
+      "kind": "shader",
+      "label": "streak",
+      "shader": "trail.glsl",
+      "x": 460,
+      "y": 500,
+      "params": {
+        "uDecay": 0.84,
+        "uZoom": 0.012,
+        "uTwist": 0.002,
+        "uKick": 0
+      }
+    },
     {
       "id": "grade",
       "kind": "shader",
@@ -80,18 +204,62 @@
       "shader": "grade.glsl",
       "x": 670,
       "y": 500,
-      "params": { "uExposure": 2.1, "uVignette": 1.1, "uShadow": "#020a1e", "uMid": "#2a8cff", "uHigh": "#e8fbff" }
+      "params": {
+        "uExposure": 2.1,
+        "uVignette": 1.1,
+        "uShadow": "#020a1e",
+        "uMid": "#2a8cff",
+        "uHigh": "#e8fbff"
+      }
     },
-    { "id": "out", "kind": "out", "label": "out", "x": 880, "y": 520 }
+    {
+      "id": "out",
+      "kind": "out",
+      "label": "out",
+      "x": 880,
+      "y": 520
+    }
   ],
   "edges": [
-    { "source": "drift", "target": "e_drift", "targetHandle": "in0" },
-    { "source": "tube_gen", "target": "tube_noise", "targetHandle": "in0" },
-    { "source": "tube_noise", "target": "tube_mix", "targetHandle": "in0" },
-    { "source": "tube_mix", "target": "tube", "targetHandle": "in0" },
-    { "source": "render", "target": "bloom", "targetHandle": "in0" },
-    { "source": "bloom", "target": "streak", "targetHandle": "ch0" },
-    { "source": "streak", "target": "grade", "targetHandle": "ch0" },
-    { "source": "grade", "target": "out", "targetHandle": "ch0" }
+    {
+      "source": "drift",
+      "target": "e_drift",
+      "targetHandle": "in0"
+    },
+    {
+      "source": "tube_gen",
+      "target": "tube_noise",
+      "targetHandle": "in0"
+    },
+    {
+      "source": "tube_noise",
+      "target": "tube_mix",
+      "targetHandle": "in0"
+    },
+    {
+      "source": "tube_mix",
+      "target": "tube",
+      "targetHandle": "in0"
+    },
+    {
+      "source": "render",
+      "target": "bloom",
+      "targetHandle": "in0"
+    },
+    {
+      "source": "bloom",
+      "target": "streak",
+      "targetHandle": "ch0"
+    },
+    {
+      "source": "streak",
+      "target": "grade",
+      "targetHandle": "ch0"
+    },
+    {
+      "source": "grade",
+      "target": "out",
+      "targetHandle": "ch0"
+    }
   ]
 }

@@ -1,7 +1,20 @@
 {
   "viewer": "out",
   "nodes": [
-    { "id": "pointgen", "kind": "op", "family": "POP", "type": "pointgen", "label": "pointgen", "x": 40, "y": 40, "pars": { "shape": "sphere", "n": 900, "s": 1.1 } },
+    {
+      "id": "pointgen",
+      "kind": "op",
+      "family": "POP",
+      "type": "pointgen",
+      "label": "pointgen",
+      "x": 40,
+      "y": 40,
+      "pars": {
+        "shape": "sphere",
+        "n": 900,
+        "s": 1.1
+      }
+    },
     {
       "id": "noise",
       "kind": "op",
@@ -10,7 +23,15 @@
       "label": "noise",
       "x": 250,
       "y": 40,
-      "pars": { "period": 0.6, "harmon": 1, "amp": 0.35, "t4d": { "mode": "expression", "expr": "absTime.seconds*0.15" } }
+      "pars": {
+        "period": 0.6,
+        "harmon": 1,
+        "amp": 0.35,
+        "t4d": {
+          "mode": "expression",
+          "expr": "absTime.seconds*0.15"
+        }
+      }
     },
     {
       "id": "mathmix",
@@ -20,7 +41,13 @@
       "label": "mathmix",
       "x": 460,
       "y": 40,
-      "pars": { "oper": "aaddbmultc", "scopeA": "P", "scopeB": "Noise", "scopeC": "1", "result": "P" }
+      "pars": {
+        "oper": "aaddbmultc",
+        "scopeA": "P",
+        "scopeB": "Noise",
+        "scopeC": "1",
+        "result": "P"
+      }
     },
     {
       "id": "xform",
@@ -30,7 +57,13 @@
       "label": "xform",
       "x": 670,
       "y": 40,
-      "pars": { "ry": { "mode": "expression", "expr": "absTime.seconds*12" }, "rx": 18 }
+      "pars": {
+        "ry": {
+          "mode": "expression",
+          "expr": "absTime.seconds*12"
+        },
+        "rx": 18
+      }
     },
     {
       "id": "phong1",
@@ -40,9 +73,30 @@
       "label": "phong1",
       "x": 40,
       "y": 260,
-      "pars": { "size": 0.075, "diffr": 1, "diffg": 0.62, "diffb": 0.38, "specr": 1.4, "specg": 1.4, "specb": 1.4, "shininess": 60 }
+      "pars": {
+        "size": 0.075,
+        "diffr": 1,
+        "diffg": 0.62,
+        "diffb": 0.38,
+        "specr": 1.4,
+        "specg": 1.4,
+        "specb": 1.4,
+        "shininess": 60
+      }
     },
-    { "id": "cam1", "kind": "op", "family": "COMP", "type": "cam", "label": "cam1", "x": 250, "y": 260, "pars": { "tz": 4.2, "ty": 0.6 } },
+    {
+      "id": "cam1",
+      "kind": "op",
+      "family": "COMP",
+      "type": "cam",
+      "label": "cam1",
+      "x": 250,
+      "y": 260,
+      "pars": {
+        "tz": 4.2,
+        "ty": 0.6
+      }
+    },
     {
       "id": "key",
       "kind": "op",
@@ -51,7 +105,18 @@
       "label": "key",
       "x": 460,
       "y": 260,
-      "pars": { "lighttype": "cone", "tx": 3, "ty": 4, "tz": 4, "coneangle": 30, "conedelta": 14, "colorr": 1, "colorg": 0.92, "colorb": 0.8, "dimmer": 1.2 }
+      "pars": {
+        "lighttype": "cone",
+        "tx": 3,
+        "ty": 4,
+        "tz": 4,
+        "coneangle": 30,
+        "conedelta": 14,
+        "colorr": 1,
+        "colorg": 0.92,
+        "colorb": 0.8,
+        "dimmer": 1.2
+      }
     },
     {
       "id": "rim",
@@ -61,7 +126,16 @@
       "label": "rim",
       "x": 460,
       "y": 380,
-      "pars": { "lighttype": "distant", "tx": -4, "ty": 1, "tz": -3, "colorr": 0.3, "colorg": 0.55, "colorb": 1, "dimmer": 1.4 }
+      "pars": {
+        "lighttype": "distant",
+        "tx": -4,
+        "ty": 1,
+        "tz": -3,
+        "colorr": 0.3,
+        "colorg": 0.55,
+        "colorb": 1,
+        "dimmer": 1.4
+      }
     },
     {
       "id": "fill",
@@ -71,18 +145,86 @@
       "label": "fill",
       "x": 460,
       "y": 500,
-      "pars": { "lighttype": "ambient", "colorr": 0.5, "colorg": 0.45, "colorb": 0.6 }
+      "pars": {
+        "lighttype": "ambient",
+        "colorr": 0.5,
+        "colorg": 0.45,
+        "colorb": 0.6
+      }
     },
-    { "id": "geo1", "kind": "op", "family": "COMP", "type": "geo", "label": "geo1", "x": 250, "y": 400, "pars": { "pop": "xform", "mat": "phong1", "cam": "cam1" } },
-    { "id": "render", "kind": "op", "family": "TOP", "type": "render", "label": "render", "x": 700, "y": 260, "pars": { "geo": "geo1", "lights": "*" } },
-    { "id": "bloom", "kind": "op", "family": "TOP", "type": "bloom", "label": "bloom", "x": 920, "y": 260, "pars": { "threshold": 0.8, "intensity": 0.6 } },
-    { "id": "out", "kind": "out", "label": "out", "x": 1140, "y": 280 }
+    {
+      "id": "geo1",
+      "kind": "op",
+      "family": "COMP",
+      "type": "geo",
+      "label": "geo1",
+      "x": 250,
+      "y": 400,
+      "pars": {
+        "pop": "xform",
+        "mat": "phong1"
+      }
+    },
+    {
+      "id": "render",
+      "kind": "op",
+      "family": "TOP",
+      "type": "render",
+      "label": "render",
+      "x": 700,
+      "y": 260,
+      "pars": {
+        "lights": "*",
+        "geometry": "geo1",
+        "camera": "cam1"
+      }
+    },
+    {
+      "id": "bloom",
+      "kind": "op",
+      "family": "TOP",
+      "type": "bloom",
+      "label": "bloom",
+      "x": 920,
+      "y": 260,
+      "pars": {
+        "threshold": 0.8,
+        "intensity": 0.6
+      }
+    },
+    {
+      "id": "out",
+      "kind": "out",
+      "label": "out",
+      "x": 1140,
+      "y": 280
+    }
   ],
   "edges": [
-    { "source": "pointgen", "target": "noise", "targetHandle": "in0" },
-    { "source": "noise", "target": "mathmix", "targetHandle": "in0" },
-    { "source": "mathmix", "target": "xform", "targetHandle": "in0" },
-    { "source": "render", "target": "bloom", "targetHandle": "in0" },
-    { "source": "bloom", "target": "out", "targetHandle": "ch0" }
+    {
+      "source": "pointgen",
+      "target": "noise",
+      "targetHandle": "in0"
+    },
+    {
+      "source": "noise",
+      "target": "mathmix",
+      "targetHandle": "in0"
+    },
+    {
+      "source": "mathmix",
+      "target": "xform",
+      "targetHandle": "in0"
+    },
+    {
+      "source": "render",
+      "target": "bloom",
+      "targetHandle": "in0"
+    },
+    {
+      "source": "bloom",
+      "target": "out",
+      "targetHandle": "ch0"
+    }
   ]
 }

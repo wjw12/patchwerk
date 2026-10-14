@@ -118,6 +118,40 @@ export const OPS: OpSpec[] = [
   },
   { family: "CHOP", type: "null", inputs: 1, pars: [] },
   {
+    family: "CHOP",
+    type: "lag",
+    inputs: 1,
+    pars: [num("lag1", 0.2, 0, 4), num("lag2", 0.2, 0, 4)],
+  },
+  {
+    family: "CHOP",
+    type: "speed",
+    inputs: 1,
+    pars: [
+      num("speed", 1, -8, 8),
+      menu("limit", "off", ["off", "clamp"]),
+      num("min", 0, -8, 8),
+      num("max", 1, -8, 8),
+      num("reset", 0, 0, 1, 1),
+      num("resetvalue", 0, -8, 8),
+    ],
+  },
+  {
+    family: "CHOP",
+    type: "noise",
+    inputs: 0,
+    pars: [
+      num("channels", 1, 1, 8, 1),
+      num("seed", 0, 0, 64),
+      num("period", 1, 0.01, 8),
+      num("rough", 0, 0, 1),
+      num("spread", 2, 1, 4),
+      num("amp", 1, 0, 4),
+      num("offset", 0, -2, 2),
+      num("t", 0, -8, 8),
+    ],
+  },
+  {
     family: "POP",
     type: "pointgen",
     inputs: 0,
@@ -252,14 +286,102 @@ export const OPS: OpSpec[] = [
     family: "COMP",
     type: "geo",
     inputs: 0,
-    pars: [ref("pop", "POP"), ref("mat", "MAT"), ref("cam", "COMP", "cam")],
+    pars: [ref("pop", "POP"), ref("mat", "MAT")],
   },
-  { family: "TOP", type: "render", inputs: 0, pars: [ref("geo", "COMP", "geo"), pattern("lights", "*", "COMP", "light")] },
+  {
+    family: "TOP",
+    type: "render",
+    inputs: 0,
+    pars: [pattern("geometry", "*", "COMP", "geo"), pattern("camera", "*", "COMP", "cam"), pattern("lights", "*", "COMP", "light")],
+  },
   {
     family: "TOP",
     type: "bloom",
     inputs: 1,
     pars: [num("threshold", 0.01, 0, 1), num("fill", 0.72, 0, 1), num("intensity", 1.24, 0, 4), num("pregamma", 1.5, 0.2, 4)],
+  },
+  {
+    family: "TOP",
+    type: "level",
+    inputs: 1,
+    pars: [
+      menu("invert", "off", ["off", "on"]),
+      num("blacklevel", 0, 0, 1),
+      num("brightness", 0, -1, 1),
+      num("gamma", 1, 0.2, 4),
+      num("contrast", 1, 0, 4),
+      num("opacity", 1, 0, 1),
+    ],
+  },
+  {
+    family: "TOP",
+    type: "blur",
+    inputs: 1,
+    pars: [menu("type", "gaussian", ["gaussian", "box"]), num("size", 8, 0, 64), menu("extend", "hold", ["hold", "zero", "repeat", "mirror"])],
+  },
+  {
+    family: "TOP",
+    type: "composite",
+    inputs: 2,
+    pars: [
+      menu("operand", "over", ["over", "add", "multiply", "subtract", "difference", "screen", "max", "min"]),
+      menu("swap", "off", ["off", "on"]),
+    ],
+  },
+  {
+    family: "TOP",
+    type: "transform",
+    inputs: 1,
+    pars: [
+      num("tx", 0, -2, 2),
+      num("ty", 0, -2, 2),
+      num("rotate", 0, -360, 360),
+      num("sx", 1, 0, 4),
+      num("sy", 1, 0, 4),
+      menu("extend", "hold", ["hold", "zero", "repeat", "mirror"]),
+      num("bgr", 0, 0, 1),
+      num("bgg", 0, 0, 1),
+      num("bgb", 0, 0, 1),
+    ],
+  },
+  {
+    family: "TOP",
+    type: "feedback",
+    inputs: 1,
+    pars: [ref("top", "TOP"), num("reset", 0, 0, 1, 1)],
+  },
+  {
+    family: "TOP",
+    type: "noise",
+    inputs: 0,
+    pars: [
+      num("seed", 0, 0, 64),
+      num("period", 0.25, 0.01, 4),
+      num("harmon", 1, 0, 2, 1),
+      num("spread", 2, 1, 4),
+      num("gain", 0.5, 0, 2),
+      num("amp", 0.5, 0, 4),
+      num("offset", 0.5, -1, 2),
+      num("t4d", 0, -8, 8),
+      menu("mono", "off", ["off", "on"]),
+    ],
+  },
+  {
+    family: "TOP",
+    type: "ramp",
+    inputs: 0,
+    pars: [
+      menu("type", "vertical", ["vertical", "horizontal", "radial"]),
+      num("phase", 0, -4, 4),
+      num("period", 1, 0.05, 8),
+      menu("extend", "hold", ["hold", "repeat", "mirror"]),
+      num("color0r", 0, 0, 1),
+      num("color0g", 0, 0, 1),
+      num("color0b", 0, 0, 1),
+      num("color1r", 1, 0, 1),
+      num("color1g", 1, 0, 1),
+      num("color1b", 1, 0, 1),
+    ],
   },
 ];
 
@@ -291,6 +413,32 @@ export function createOpData(family: Family, type: string, label: string): OpDat
 }
 
 export type ParOverride = number | string | { mode?: ParMode; value?: number; expr?: string };
+
+/**
+ * A render saved before camera moved off the geo has `geo` (one label) and no `geometry`.
+ * The cam is `cam` on that geo. Copy both onto the current pars when the new keys were
+ * never stored, so an old room does not become geometry `*` / camera `*`.
+ */
+export function migrateLegacyRenders(
+  nodes: { id: string; data: { kind: string; type?: string; label: string; pars?: Par[] } }[],
+  stored: (id: string, name: string) => string | null,
+): void {
+  for (const node of nodes) {
+    if (node.data.kind !== "op" || node.data.type !== "render" || !node.data.pars) continue;
+    const legacyGeo = stored(node.id, "geo");
+    if (!legacyGeo || stored(node.id, "geometry") != null) continue;
+    setTextPar(node.data.pars, "geometry", legacyGeo);
+    if (stored(node.id, "camera") != null) continue;
+    const geo = nodes.find((item) => item.data.kind === "op" && item.data.type === "geo" && item.data.label === legacyGeo);
+    const cam = geo ? stored(geo.id, "cam") : null;
+    if (cam) setTextPar(node.data.pars, "camera", cam);
+  }
+}
+
+function setTextPar(pars: Par[], name: string, value: string): void {
+  const par = pars.find((item) => item.name === name);
+  if (par?.kind === "text") par.value = value;
+}
 
 export function applyParOverrides(pars: Par[], overrides: Record<string, ParOverride> | undefined): Par[] {
   if (!overrides) return pars;
@@ -348,7 +496,10 @@ export const DESCRIBE: Record<string, string> = {
   "CHOP:pattern": "sin(2π·phase)·amp; drive phase with an expression",
   "CHOP:audioband": "mean spectrum level between lo..hi (fractions of 512 bins) × gain; synthetic spectrum until a human enables the mic",
   "CHOP:math": "remap: in0 from [from1,from2] to [to1,to2]; add: in0 + in1",
-  "CHOP:null": "passes in0; a stable name to reference",
+  "CHOP:null": "passes every channel of in0; a stable name to reference",
+  "CHOP:lag": "follows in0. lag1 seconds to cover ~90% of a rise, lag2 of a fall, per channel",
+  "CHOP:speed": "integrates in0 as velocity (units/second), one output channel per input channel; with no input, integrates the speed par",
+  "CHOP:noise": "1..8 channels of value noise. chan1 is channel 0; op('noise1')['chan2'] reads the second",
   "POP:pointgen": "n points on a circle or sphere of size s",
   "POP:noise": "adds attribute Noise per point; does not move points; follow with mathmix. t4d animates it",
   "POP:mathmix": "result = A + B·C | A − B | mix(A, B, clamp(C, 0, 1)); a scope is an attribute (P, Noise, an earlier result) or a number",
@@ -360,9 +511,16 @@ export const DESCRIBE: Record<string, string> = {
   "MAT:phong": "every point is a solid sphere of radius size (world units), ray-traced with true depth: ambient·amb + Σ light·(diff·N·L + spec·(N·H)^shininess) + emit; lit by light COMPs (without one a headlight sits at the camera)",
   "COMP:cam": "camera at t looking at look",
   "COMP:light": "lights phong MATs. point: at t, all directions; distant: parallel rays from t toward look; cone: a spotlight at t aimed at look; ambient: lifts everything by color. dimmer scales color",
-  "COMP:geo": "what render draws",
-  "TOP:render": "draws the geo's points into an image; lights is * (every light COMP) or labels separated by spaces, * wildcards allowed; only phong uses them",
+  "COMP:geo": "one object a render draws: a POP and a MAT. The camera lives on the render",
+  "TOP:render": "draws every geo COMP its geometry pattern matches, through its own camera. Phong geos first (depth), then additive point geos. lights is * or labels; only phong uses them",
   "TOP:bloom": "glow",
+  "TOP:level": "black level, brightness, gamma, contrast, then opacity. invert flips rgb first",
+  "TOP:blur": "gaussian or box blur. size is the sigma in pixels (box: the radius)",
+  "TOP:composite": "in0 operand in1. over is premultiplied; add stacks two renders",
+  "TOP:transform": "moves, rotates and scales in0. tx/ty are fractions of the frame",
+  "TOP:feedback": "with reset 0, outputs the previous frame of the TOP named by top. reset 1 passes in0. Point top at a downstream TOP; do not wire a cycle",
+  "TOP:noise": "value noise image. t4d animates it. mono off is a different field per channel",
+  "TOP:ramp": "two-color ramp: vertical, horizontal or radial",
 };
 
 /** What the less obvious parameters do; catalogText prints it under the op for the assistant. */
@@ -379,9 +537,19 @@ export const PAR_NOTES: Record<string, string> = {
   "MAT:phong": "size is the sphere radius in world units, so spheres shrink with distance like geometry; about half the point spacing reads as a solid surface. diff: diffuse color; spec: specular highlight color; shininess: highlight tightness (higher is smaller); amb: how much ambient light it takes; emit: self-lit color. Reads only P. At most 8 point/distant/cone lights count; ambient lights add up",
   "COMP:cam": "t is the eye position, look is the point it aims at; fov is vertical, in degrees",
   "COMP:light": "lighttype point|distant|cone|ambient; t is the position, look the point a distant or cone light aims at (default the origin); an ambient light ignores both. coneangle is the full cone in degrees, conedelta the soft edge added outside it. color × dimmer is the light; no falloff with distance",
-  "COMP:geo": "pop, mat and cam are labels of a POP, a MAT and a cam COMP",
-  "TOP:render": "geo is a geo COMP label; lights matches light COMP labels (default * = all). Cooks at 960x540; out shows it at 1920x1080",
+  "CHOP:lag": "lag1 when the input is above the output, lag2 when it is below, in seconds. 0 snaps. Every input channel is lagged on its own",
+  "CHOP:speed": "first-order integral, the TD Speed CHOP: output += input * dt. limit clamp holds the result in [min, max]. reset 1 sets every channel to resetvalue. No input: one channel ramps at `speed` per second",
+  "CHOP:noise": "channels is how many (chan1..chanN, max 8). period is seconds between peaks; t is an extra translate (drive it, or leave 0 and let seconds move the field); rough mixes a second octave at `spread`; amp and offset scale the -1..1 noise",
+  "COMP:geo": "pop and mat are labels of a POP and a MAT. A render's geometry pattern names this geo; the camera is the render's, not the geo's",
+  "TOP:render": "geometry and camera are patterns (* = all, or labels and globs separated by spaces). The first matching cam is the one camera this TOP draws; a second camera needs its own render. An older node that still has geo (one label) and no camera uses that geo and the cam stored on it. lights matches light COMP labels (default * = all). Cooks at 960x540; out shows it at 1920x1080",
   "TOP:bloom": "threshold: brightness that starts to glow (the 0.01 default glows nearly everything, right for sparse point glow; raise to ~0.8 after phong so only highlights glow); fill: how far it spreads; intensity: glow added back; pregamma: contrast before thresholding",
+  "TOP:level": "blacklevel: pixels at or below this become black and the rest stretch up. brightness adds. gamma 1 is unchanged, above 1 darkens. contrast 1 is unchanged, scaled around 0.5. opacity multiplies rgb and alpha. Not the Range/RGBA/Step pages",
+  "TOP:blur": "type gaussian|box. size is pixels (gaussian: sigma). extend hold|zero|repeat|mirror. Horizontal then vertical; sizes above 16 space the taps so the width is still real",
+  "TOP:composite": "operand over|add|multiply|subtract|difference|screen|max|min. swap on exchanges the inputs. over of two opaque pictures shows in0; use add to layer renders",
+  "TOP:transform": "order is rotate, scale, then translate, about the center. extend zero shows bgr/bgg/bgb outside the image; hold clamps; repeat and mirror tile",
+  "TOP:feedback": "top is a TOP label (a shader, a render, another filter). The cook reads last frame, so the downstream chain can use this output and feed that TOP without a wire cycle. Empty top is an error while reset is 0",
+  "TOP:noise": "period is the feature size in frame-fractions. harmon 0..2 extra octaves. Same field family as POP noise, evaluated on pixels",
+  "TOP:ramp": "phase shifts the stops, period stretches them. extend hold|repeat|mirror. color0 is t=0, color1 is t=1",
 };
 
 function describePar(par: Par): string {

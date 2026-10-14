@@ -146,7 +146,7 @@ function NumberRow({ id, par, label, write }: { id: string; par: Extract<Par, { 
   );
 }
 
-/** A name parameter (geo.pop, render.geo, ...): pick from the ops that fit. A name that no longer fits stays listed. */
+/** A name parameter (geo.pop, render.geometry, ...): pick from the ops that fit. A name that no longer fits stays listed. */
 function RefRow({ par, label, write }: { par: TextPar; label: string; write: ParSetter }) {
   const want = par.ref;
   const options = useGraph((state) =>

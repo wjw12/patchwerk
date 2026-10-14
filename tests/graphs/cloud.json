@@ -1,7 +1,18 @@
 {
   "viewer": "out",
   "nodes": [
-    { "id": "lfo_amp", "kind": "op", "family": "CHOP", "type": "lfo", "label": "lfo_amp", "x": 40, "y": 24, "pars": { "frequency": 0.02 } },
+    {
+      "id": "lfo_amp",
+      "kind": "op",
+      "family": "CHOP",
+      "type": "lfo",
+      "label": "lfo_amp",
+      "x": 40,
+      "y": 24,
+      "pars": {
+        "frequency": 0.02
+      }
+    },
     {
       "id": "math_amp",
       "kind": "op",
@@ -10,9 +21,22 @@
       "label": "math_amp",
       "x": 250,
       "y": 24,
-      "pars": { "from1": -1, "from2": 1, "to1": 0.1, "to2": 1 }
+      "pars": {
+        "from1": -1,
+        "from2": 1,
+        "to1": 0.1,
+        "to2": 1
+      }
     },
-    { "id": "e_amp", "kind": "op", "family": "CHOP", "type": "null", "label": "e_amp", "x": 460, "y": 24 },
+    {
+      "id": "e_amp",
+      "kind": "op",
+      "family": "CHOP",
+      "type": "null",
+      "label": "e_amp",
+      "x": 460,
+      "y": 24
+    },
     {
       "id": "pat",
       "kind": "op",
@@ -21,7 +45,12 @@
       "label": "pat",
       "x": 40,
       "y": 150,
-      "pars": { "phase": { "mode": "expression", "expr": "absTime.seconds*0.1" } }
+      "pars": {
+        "phase": {
+          "mode": "expression",
+          "expr": "absTime.seconds*0.1"
+        }
+      }
     },
     {
       "id": "math_gain",
@@ -31,10 +60,34 @@
       "label": "math_gain",
       "x": 250,
       "y": 150,
-      "pars": { "from1": -1, "from2": 1, "to1": 0.25, "to2": 1.2 }
+      "pars": {
+        "from1": -1,
+        "from2": 1,
+        "to1": 0.25,
+        "to2": 1.2
+      }
     },
-    { "id": "e_gain", "kind": "op", "family": "CHOP", "type": "null", "label": "e_gain", "x": 460, "y": 150 },
-    { "id": "lfo_focus", "kind": "op", "family": "CHOP", "type": "lfo", "label": "lfo_focus", "x": 40, "y": 276, "pars": { "frequency": 0.05 } },
+    {
+      "id": "e_gain",
+      "kind": "op",
+      "family": "CHOP",
+      "type": "null",
+      "label": "e_gain",
+      "x": 460,
+      "y": 150
+    },
+    {
+      "id": "lfo_focus",
+      "kind": "op",
+      "family": "CHOP",
+      "type": "lfo",
+      "label": "lfo_focus",
+      "x": 40,
+      "y": 276,
+      "pars": {
+        "frequency": 0.05
+      }
+    },
     {
       "id": "math_focus",
       "kind": "op",
@@ -43,10 +96,36 @@
       "label": "math_focus",
       "x": 250,
       "y": 276,
-      "pars": { "from1": -1, "from2": 1, "to1": 2, "to2": 7 }
+      "pars": {
+        "from1": -1,
+        "from2": 1,
+        "to1": 2,
+        "to2": 7
+      }
     },
-    { "id": "e_focus", "kind": "op", "family": "CHOP", "type": "null", "label": "e_focus", "x": 460, "y": 276 },
-    { "id": "pointgen", "kind": "op", "family": "POP", "type": "pointgen", "label": "pointgen", "x": 40, "y": 430, "pars": { "n": 256, "s": 0.2, "shape": "circle" } },
+    {
+      "id": "e_focus",
+      "kind": "op",
+      "family": "CHOP",
+      "type": "null",
+      "label": "e_focus",
+      "x": 460,
+      "y": 276
+    },
+    {
+      "id": "pointgen",
+      "kind": "op",
+      "family": "POP",
+      "type": "pointgen",
+      "label": "pointgen",
+      "x": 40,
+      "y": 430,
+      "pars": {
+        "n": 256,
+        "s": 0.2,
+        "shape": "circle"
+      }
+    },
     {
       "id": "noise",
       "kind": "op",
@@ -59,9 +138,18 @@
         "period": 0.045,
         "harmon": 2,
         "spread": 2,
-        "t4d": { "mode": "expression", "expr": "absTime.seconds*0.08" },
-        "amp": { "mode": "expression", "expr": "op('e_amp')['chan1']" },
-        "gain": { "mode": "expression", "expr": "op('e_gain')['chan1']" }
+        "t4d": {
+          "mode": "expression",
+          "expr": "absTime.seconds*0.08"
+        },
+        "amp": {
+          "mode": "expression",
+          "expr": "op('e_amp')['chan1']"
+        },
+        "gain": {
+          "mode": "expression",
+          "expr": "op('e_gain')['chan1']"
+        }
       }
     },
     {
@@ -72,7 +160,13 @@
       "label": "mathmix",
       "x": 460,
       "y": 430,
-      "pars": { "oper": "aaddbmultc", "scopeA": "P", "scopeB": "Noise", "scopeC": "1", "result": "Pnoise" }
+      "pars": {
+        "oper": "aaddbmultc",
+        "scopeA": "P",
+        "scopeB": "Noise",
+        "scopeC": "1",
+        "result": "Pnoise"
+      }
     },
     {
       "id": "mathcombine",
@@ -88,7 +182,10 @@
         "scopeB": "Pnoise",
         "scopeC": "weight",
         "result": "P",
-        "weight": { "mode": "expression", "expr": "op('e_amp')['chan1']" }
+        "weight": {
+          "mode": "expression",
+          "expr": "op('e_amp')['chan1']"
+        }
       }
     },
     {
@@ -99,9 +196,25 @@
       "label": "xform",
       "x": 880,
       "y": 430,
-      "pars": { "ry": { "mode": "expression", "expr": "absTime.seconds*5" } }
+      "pars": {
+        "ry": {
+          "mode": "expression",
+          "expr": "absTime.seconds*5"
+        }
+      }
     },
-    { "id": "cam1", "kind": "op", "family": "COMP", "type": "cam", "label": "cam1", "x": 40, "y": 640, "pars": { "tz": 5 } },
+    {
+      "id": "cam1",
+      "kind": "op",
+      "family": "COMP",
+      "type": "cam",
+      "label": "cam1",
+      "x": 40,
+      "y": 640,
+      "pars": {
+        "tz": 5
+      }
+    },
     {
       "id": "geo1",
       "kind": "op",
@@ -110,7 +223,10 @@
       "label": "geo1",
       "x": 250,
       "y": 640,
-      "pars": { "pop": "xform", "mat": "mat1", "cam": "cam1" }
+      "pars": {
+        "pop": "xform",
+        "mat": "mat1"
+      }
     },
     {
       "id": "mat1",
@@ -120,24 +236,105 @@
       "label": "mat1",
       "x": 460,
       "y": 640,
-      "pars": { "scale": 2.2, "alpha": 0.22, "focus": { "mode": "expression", "expr": "op('e_focus')['chan1']" } }
+      "pars": {
+        "scale": 2.2,
+        "alpha": 0.22,
+        "focus": {
+          "mode": "expression",
+          "expr": "op('e_focus')['chan1']"
+        }
+      }
     },
-    { "id": "render", "kind": "op", "family": "TOP", "type": "render", "label": "render", "x": 700, "y": 640, "pars": { "geo": "geo1" } },
-    { "id": "bloom", "kind": "op", "family": "TOP", "type": "bloom", "label": "bloom", "x": 920, "y": 640 },
-    { "id": "out", "kind": "out", "label": "out", "x": 1140, "y": 660 }
+    {
+      "id": "render",
+      "kind": "op",
+      "family": "TOP",
+      "type": "render",
+      "label": "render",
+      "x": 700,
+      "y": 640,
+      "pars": {
+        "geometry": "geo1",
+        "camera": "cam1"
+      }
+    },
+    {
+      "id": "bloom",
+      "kind": "op",
+      "family": "TOP",
+      "type": "bloom",
+      "label": "bloom",
+      "x": 920,
+      "y": 640
+    },
+    {
+      "id": "out",
+      "kind": "out",
+      "label": "out",
+      "x": 1140,
+      "y": 660
+    }
   ],
   "edges": [
-    { "source": "lfo_amp", "target": "math_amp", "targetHandle": "in0" },
-    { "source": "math_amp", "target": "e_amp", "targetHandle": "in0" },
-    { "source": "pat", "target": "math_gain", "targetHandle": "in0" },
-    { "source": "math_gain", "target": "e_gain", "targetHandle": "in0" },
-    { "source": "lfo_focus", "target": "math_focus", "targetHandle": "in0" },
-    { "source": "math_focus", "target": "e_focus", "targetHandle": "in0" },
-    { "source": "pointgen", "target": "noise", "targetHandle": "in0" },
-    { "source": "noise", "target": "mathmix", "targetHandle": "in0" },
-    { "source": "mathmix", "target": "mathcombine", "targetHandle": "in0" },
-    { "source": "mathcombine", "target": "xform", "targetHandle": "in0" },
-    { "source": "render", "target": "bloom", "targetHandle": "in0" },
-    { "source": "bloom", "target": "out", "targetHandle": "ch0" }
+    {
+      "source": "lfo_amp",
+      "target": "math_amp",
+      "targetHandle": "in0"
+    },
+    {
+      "source": "math_amp",
+      "target": "e_amp",
+      "targetHandle": "in0"
+    },
+    {
+      "source": "pat",
+      "target": "math_gain",
+      "targetHandle": "in0"
+    },
+    {
+      "source": "math_gain",
+      "target": "e_gain",
+      "targetHandle": "in0"
+    },
+    {
+      "source": "lfo_focus",
+      "target": "math_focus",
+      "targetHandle": "in0"
+    },
+    {
+      "source": "math_focus",
+      "target": "e_focus",
+      "targetHandle": "in0"
+    },
+    {
+      "source": "pointgen",
+      "target": "noise",
+      "targetHandle": "in0"
+    },
+    {
+      "source": "noise",
+      "target": "mathmix",
+      "targetHandle": "in0"
+    },
+    {
+      "source": "mathmix",
+      "target": "mathcombine",
+      "targetHandle": "in0"
+    },
+    {
+      "source": "mathcombine",
+      "target": "xform",
+      "targetHandle": "in0"
+    },
+    {
+      "source": "render",
+      "target": "bloom",
+      "targetHandle": "in0"
+    },
+    {
+      "source": "bloom",
+      "target": "out",
+      "targetHandle": "ch0"
+    }
   ]
 }

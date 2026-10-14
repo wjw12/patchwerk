@@ -6,6 +6,7 @@ export type ParItem = { kind: "single"; par: Par } | { kind: "vector"; label: st
 // Suffix sets that make a vector, in the order the catalog lists them.
 const SUFFIXES = [
   ["x", "y", "z"],
+  ["x", "y"],
   ["r", "g", "b"],
   ["1", "2"],
 ];
@@ -22,6 +23,10 @@ const PREFIX_LABELS: Record<string, string> = {
   emit: "emit",
   from: "from range",
   to: "to range",
+  lag: "lag",
+  color0: "color 0",
+  color1: "color 1",
+  bg: "background",
 };
 
 const LABELS: Record<string, string> = {
@@ -40,9 +45,16 @@ const LABELS: Record<string, string> = {
   conedelta: "cone delta",
   pregamma: "pre-gamma",
   geo: "geometry",
+  geometry: "geometry",
+  camera: "camera",
   pop: "POP",
   mat: "material",
   cam: "camera",
+  blacklevel: "black level",
+  lag1: "lag up",
+  lag2: "lag down",
+  resetvalue: "reset value",
+  channels: "channels",
 };
 
 /** A readable label; the parameter's own name (what expressions and the assistant use) is the tooltip. */
