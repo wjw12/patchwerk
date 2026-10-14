@@ -1,0 +1,18 @@
+{
+  "viewer": "out",
+  "nodes": [
+    { "id": "audio", "kind": "audio", "label": "audio", "x": 40, "y": 40 },
+    { "id": "ring", "kind": "shader", "label": "ring", "shader": "ring.glsl", "x": 280, "y": 40 },
+    { "id": "bloom", "kind": "op", "family": "TOP", "type": "bloom", "label": "bloom", "x": 520, "y": 40, "pars": { "threshold": 0.2, "intensity": 0.7 } },
+    { "id": "warp", "kind": "shader", "label": "warp", "shader": "warp.glsl", "x": 280, "y": 260, "params": { "uScale": 0.8, "uSpeed": 0.15, "uTint": "#3a1d6e" } },
+    { "id": "mixer", "kind": "shader", "label": "mixer", "shader": "mixer.glsl", "x": 760, "y": 120, "params": { "uA": 1, "uB": 0.12, "uMode": 1 } },
+    { "id": "out", "kind": "out", "label": "out", "x": 1000, "y": 140 }
+  ],
+  "edges": [
+    { "source": "audio", "target": "ring", "targetHandle": "ch0" },
+    { "source": "ring", "target": "bloom", "targetHandle": "in0" },
+    { "source": "bloom", "target": "mixer", "targetHandle": "ch0" },
+    { "source": "warp", "target": "mixer", "targetHandle": "ch1" },
+    { "source": "mixer", "target": "out", "targetHandle": "ch0" }
+  ]
+}
