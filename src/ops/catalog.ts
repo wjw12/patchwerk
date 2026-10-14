@@ -170,7 +170,14 @@ export const OPS: OpSpec[] = [
     family: "MAT",
     type: "point",
     inputs: 0,
-    pars: [num("scale", 6, 0.1, 64), num("focus", 4, 0, 32), num("alpha", 0.85, 0, 1)],
+    pars: [
+      num("scale", 6, 0.1, 64),
+      num("focus", 4, 0, 32),
+      num("alpha", 0.85, 0, 1),
+      num("colorr", 1, 0, 4),
+      num("colorg", 1, 0, 4),
+      num("colorb", 1, 0, 4),
+    ],
   },
   {
     family: "COMP",

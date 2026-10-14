@@ -15,6 +15,8 @@ export interface CloudDraw {
   scale: number;
   focus: number;
   alpha: number;
+  /** Point MAT color; previews leave it out and draw white. */
+  color?: [number, number, number];
 }
 
 export interface BloomPars {
@@ -85,7 +87,7 @@ export class ImageOps {
     }
     const draw: PointDraw = {
       ...cloud,
-      color: [1, 1, 1],
+      color: cloud.color ?? [1, 1, 1],
       target,
       width: COOK_W,
       height: COOK_H,
