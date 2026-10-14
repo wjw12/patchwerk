@@ -126,8 +126,13 @@ export function toGraphFile(nodes: PNode[], edges: Edge[]): GraphFile {
       }
       if (data.kind !== "shader") return base;
       const named = Object.entries(shaders).find(([, source]) => source === data.draft)?.[0];
-      const params: Record<string, number | number[]> = {};
-      for (const param of data.params) params[param.name] = param.kind === "float" ? param.value : [...param.value];
+      const params: NonNullable<GraphNode["params"]> = {};
+      for (const param of data.params) {
+        if (param.kind === "color") params[param.name] = [...param.value];
+        else if (param.kind === "menu") params[param.name] = param.value;
+        else if (param.mode === "expression") params[param.name] = { mode: "expression", expr: param.expr ?? "", value: param.value };
+        else params[param.name] = param.value;
+      }
       return {
         ...base,
         ...(named ? { shader: named.slice(named.lastIndexOf("/") + 1) } : { source: data.draft }),
