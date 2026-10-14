@@ -1,0 +1,38 @@
+{
+  "viewer": "out",
+  "nodes": [
+    {
+      "id": "o1",
+      "kind": "shader",
+      "label": "o1",
+      "shader": "hydra-o1.glsl",
+      "x": 40,
+      "y": 80,
+      "params": { "iChannel3.filter": "nearest", "iChannel3.wrap": "clamp" }
+    },
+    {
+      "id": "o5",
+      "kind": "shader",
+      "label": "o5",
+      "shader": "hydra-o5.glsl",
+      "x": 360,
+      "y": 80,
+      "params": { "iChannel0.filter": "linear", "iChannel3.filter": "nearest", "iChannel3.wrap": "clamp" }
+    },
+    {
+      "id": "post",
+      "kind": "shader",
+      "label": "post",
+      "shader": "hydra-post.glsl",
+      "x": 680,
+      "y": 80
+    },
+    { "id": "out", "kind": "out", "label": "out", "x": 1000, "y": 80 }
+  ],
+  "edges": [
+    { "source": "o1", "target": "o5", "targetHandle": "ch0" },
+    { "source": "o1", "target": "post", "targetHandle": "ch0" },
+    { "source": "o5", "target": "post", "targetHandle": "ch1" },
+    { "source": "post", "target": "out", "targetHandle": "ch0" }
+  ]
+}
