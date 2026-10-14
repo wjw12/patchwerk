@@ -1,0 +1,112 @@
+{
+  "viewer": "out",
+  "nodes": [
+    { "id": "bass", "kind": "op", "family": "CHOP", "type": "audioband", "label": "bass", "x": 40, "y": 24, "pars": { "lo": 0, "hi": 0.05, "gain": 1.4 } },
+    { "id": "e_bass", "kind": "op", "family": "CHOP", "type": "null", "label": "e_bass", "x": 250, "y": 24 },
+    { "id": "high", "kind": "op", "family": "CHOP", "type": "audioband", "label": "high", "x": 40, "y": 150, "pars": { "lo": 0.25, "hi": 0.6, "gain": 3 } },
+    { "id": "e_high", "kind": "op", "family": "CHOP", "type": "null", "label": "e_high", "x": 250, "y": 150 },
+    { "id": "drift", "kind": "op", "family": "CHOP", "type": "lfo", "label": "drift", "x": 40, "y": 276, "pars": { "frequency": 0.03 } },
+    {
+      "id": "math_drift",
+      "kind": "op",
+      "family": "CHOP",
+      "type": "math",
+      "label": "math_drift",
+      "x": 250,
+      "y": 276,
+      "pars": { "from1": -1, "from2": 1, "to1": 0.35, "to2": 0.9 }
+    },
+    { "id": "e_drift", "kind": "op", "family": "CHOP", "type": "null", "label": "e_drift", "x": 460, "y": 276 },
+    { "id": "sphere", "kind": "op", "family": "POP", "type": "pointgen", "label": "sphere", "x": 40, "y": 430, "pars": { "shape": "sphere", "n": 4096, "s": 1.1 } },
+    {
+      "id": "noise",
+      "kind": "op",
+      "family": "POP",
+      "type": "noise",
+      "label": "noise",
+      "x": 250,
+      "y": 430,
+      "pars": {
+        "period": { "mode": "expression", "expr": "op('e_drift')['chan1']" },
+        "harmon": 2,
+        "spread": 2,
+        "gain": 0.55,
+        "amp": { "mode": "expression", "expr": "0.08 + op('e_bass')['chan1'] * 0.5" },
+        "t4d": { "mode": "expression", "expr": "absTime.seconds * 0.12" }
+      }
+    },
+    {
+      "id": "mathmix",
+      "kind": "op",
+      "family": "POP",
+      "type": "mathmix",
+      "label": "mathmix",
+      "x": 460,
+      "y": 430,
+      "pars": { "oper": "aaddbmultc", "scopeA": "P", "scopeB": "Noise", "scopeC": "1", "result": "P" }
+    },
+    {
+      "id": "xform",
+      "kind": "op",
+      "family": "POP",
+      "type": "transform",
+      "label": "xform",
+      "x": 670,
+      "y": 430,
+      "pars": {
+        "rx": { "mode": "expression", "expr": "absTime.seconds * 3" },
+        "ry": { "mode": "expression", "expr": "absTime.seconds * 11" },
+        "sx": { "mode": "expression", "expr": "1 + op('e_bass')['chan1'] * 0.25" },
+        "sy": { "mode": "expression", "expr": "1 + op('e_bass')['chan1'] * 0.25" },
+        "sz": { "mode": "expression", "expr": "1 + op('e_bass')['chan1'] * 0.25" }
+      }
+    },
+    { "id": "cam1", "kind": "op", "family": "COMP", "type": "cam", "label": "cam1", "x": 40, "y": 640, "pars": { "tz": 4.2, "ty": 0.6, "fov": 50 } },
+    { "id": "geo1", "kind": "op", "family": "COMP", "type": "geo", "label": "geo1", "x": 250, "y": 640, "pars": { "pop": "xform", "mat": "mat1", "cam": "cam1" } },
+    {
+      "id": "mat1",
+      "kind": "op",
+      "family": "MAT",
+      "type": "point",
+      "label": "mat1",
+      "x": 460,
+      "y": 640,
+      "pars": {
+        "scale": 2,
+        "focus": 3,
+        "alpha": 0.55,
+        "colorr": 1,
+        "colorg": { "mode": "expression", "expr": "0.35 + op('e_high')['chan1'] * 0.8" },
+        "colorb": 1.3
+      }
+    },
+    { "id": "render", "kind": "op", "family": "TOP", "type": "render", "label": "render", "x": 40, "y": 780, "pars": { "geo": "geo1" } },
+    { "id": "bloom", "kind": "op", "family": "TOP", "type": "bloom", "label": "bloom", "x": 250, "y": 780, "pars": { "intensity": 1.6 } },
+    { "id": "audio", "kind": "audio", "label": "audio", "x": 250, "y": 920 },
+    { "id": "trail", "kind": "shader", "label": "trail", "shader": "trail.glsl", "x": 460, "y": 780, "params": { "uDecay": 0.86, "uZoom": 0.005, "uTwist": 0.004, "uKick": 0.03 } },
+    {
+      "id": "grade",
+      "kind": "shader",
+      "label": "grade",
+      "shader": "grade.glsl",
+      "x": 670,
+      "y": 780,
+      "params": { "uExposure": 1.7, "uShadow": "#12062e", "uMid": "#e0307a", "uHigh": "#ffe9b8" }
+    },
+    { "id": "out", "kind": "out", "label": "out", "x": 880, "y": 800 }
+  ],
+  "edges": [
+    { "source": "bass", "target": "e_bass", "targetHandle": "in0" },
+    { "source": "high", "target": "e_high", "targetHandle": "in0" },
+    { "source": "drift", "target": "math_drift", "targetHandle": "in0" },
+    { "source": "math_drift", "target": "e_drift", "targetHandle": "in0" },
+    { "source": "sphere", "target": "noise", "targetHandle": "in0" },
+    { "source": "noise", "target": "mathmix", "targetHandle": "in0" },
+    { "source": "mathmix", "target": "xform", "targetHandle": "in0" },
+    { "source": "render", "target": "bloom", "targetHandle": "in0" },
+    { "source": "bloom", "target": "trail", "targetHandle": "ch0" },
+    { "source": "audio", "target": "trail", "targetHandle": "ch1" },
+    { "source": "trail", "target": "grade", "targetHandle": "ch0" },
+    { "source": "grade", "target": "out", "targetHandle": "ch0" }
+  ]
+}
