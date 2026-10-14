@@ -10,9 +10,11 @@ import type * as Y from "yjs";
 import { yCollab, yUndoManagerKeymap } from "y-codemirror.next";
 import { errorMarks } from "../engine/wrap";
 import { useGraph } from "../store";
-import { getAwareness, getCode, setEditing, useSync } from "../sync";
+import { readSession } from "../session";
+import { getAwareness, getCode, getLocalCode, setEditing, useSync } from "../sync";
 
 const glsl = StreamLanguage.define(shader);
+const fixed = readSession().fixed;
 
 export function Editor({ height, onResize }: { height: number; onResize: (height: number) => void }) {
   const open = useGraph((state) => state.editorOpen);
@@ -25,7 +27,8 @@ export function Editor({ height, onResize }: { height: number; onResize: (height
   errorRef.current = shader?.error ?? null;
   const [view, setView] = useState<EditorView | null>(null);
   // The text lives in the room; until the first sync there is nothing to bind to.
-  const text = node && shader && synced ? getCode(node.id) : null;
+  // A fixed session has no room and edits a local text instead.
+  const text = node && shader ? (fixed ? getLocalCode(node.id, shader.draft) : synced ? getCode(node.id) : null) : null;
   const others = node ? peers.filter((peer) => peer.editing === node.id) : [];
 
   useEffect(() => {
@@ -91,7 +94,7 @@ function CodeView({
   useEffect(() => {
     const parent = host.current;
     const awareness = getAwareness();
-    if (!parent || !awareness) return;
+    if (!parent) return;
     const view = new EditorView({
       parent,
       state: EditorState.create({

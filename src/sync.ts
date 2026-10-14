@@ -74,6 +74,20 @@ export function getCode(id: string): Y.Text | null {
   return codeMap.get(id) ?? null;
 }
 
+// Fixed sessions (?graph=, ?t=, ?frame=) never join a room. Their editor binds to a
+// local, unsynced text that writes each edit straight back into the store.
+const localDoc = new Y.Doc();
+const localCode = localDoc.getMap<Y.Text>("code");
+
+export function getLocalCode(id: string, draft: string): Y.Text {
+  const existing = localCode.get(id);
+  if (existing) return existing;
+  const text = new Y.Text(draft);
+  localCode.set(id, text);
+  text.observe(() => useGraph.getState().updateDraft(id, text.toString()));
+  return text;
+}
+
 export function getAwareness(): Awareness | null {
   return provider?.awareness ?? null;
 }
