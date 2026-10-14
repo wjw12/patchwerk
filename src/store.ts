@@ -374,7 +374,7 @@ function guessRefs(pars: Par[], nodes: PNode[], edges: Edge[], selected: PNode |
 }
 
 /** Labels are how op('name') and geo/render find a node, so no two nodes share one: noise1, noise2. */
-function uniqueLabel(want: string, nodes: PNode[], self?: string): string {
+export function uniqueLabel(want: string, nodes: PNode[], self?: string): string {
   const taken = new Set(nodes.filter((node) => node.id !== self).map((node) => node.data.label));
   if (!taken.has(want)) return want;
   const base = want.replace(/\d+$/, "");

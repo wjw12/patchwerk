@@ -18,7 +18,7 @@ import { decodeShaderParam, encodeShaderParam, parseShader } from "./engine/wrap
 import { identity } from "./room";
 import { wireStyle, type Family } from "./family";
 import { createOpData, type OpData, type Par } from "./ops/catalog";
-import { keepsWire, mergeParams, nodeOutlet, useGraph, type GraphState, type NodeData, type PNode, type ShaderData } from "./store";
+import { keepsWire, mergeParams, nodeOutlet, uniqueLabel, useGraph, type GraphState, type NodeData, type PNode, type ShaderData } from "./store";
 
 /** This client's graph edits. The only origin the undo manager records. */
 const LOCAL = Symbol("local");
@@ -224,6 +224,9 @@ function seed(state: GraphState): void {
   }, QUIET);
 }
 
+/** Nodes this tab added, so a label clash is fixed by the tab that made the clashing node. */
+const added = new Set<string>();
+
 function push(state: GraphState, prev: GraphState): void {
   if (!ready || applying) return;
   if (state.nodes === prev.nodes && state.edges === prev.edges) return;
@@ -232,6 +235,7 @@ function push(state: GraphState, prev: GraphState): void {
     const alive = new Set<string>();
     for (const node of state.nodes) {
       alive.add(node.id);
+      if (!before.has(node.id)) added.add(node.id);
       if (before.get(node.id) !== node) writeNode(node);
     }
     for (const node of prev.nodes) if (!alive.has(node.id)) removeNode(node.id);
@@ -334,6 +338,7 @@ function pull(): void {
     nodes.push(old && sameNode(old, next) ? old : next);
   });
   nodes.sort((a, b) => (a.id < b.id ? -1 : 1));
+  relabelClashes(nodes);
 
   const edges = pruneEdges(nodes);
   applying = true;
@@ -343,6 +348,36 @@ function pull(): void {
     applying = false;
   }
   if (reloaded) useGraph.getState().requestFit();
+}
+
+/**
+ * Two tabs adding a noise at the same moment both pick "noise1". Labels are how op('…') and
+ * geo/render find a node, so the node with the later id gets the next free label, written
+ * once by the tab that added it. It is a local edit so it undoes along with the add.
+ */
+function relabelClashes(nodes: PNode[]): void {
+  const seen = new Set<string>();
+  const fixes: [number, string][] = [];
+  nodes.forEach((node, index) => {
+    const label = node.data.label;
+    if (!seen.has(label)) {
+      seen.add(label);
+      return;
+    }
+    if (!added.has(node.id)) return;
+    const next = uniqueLabel(label, nodes.filter((other) => other.id !== node.id));
+    seen.add(next);
+    fixes.push([index, next]);
+    nodes[index] = { ...node, data: { ...node.data, label: next } };
+  });
+  if (fixes.length === 0) return;
+  doc.transact(() => {
+    for (const [index, label] of fixes) {
+      const id = nodes[index]!.id;
+      const rec = nodesMap.get(id);
+      if (rec) nodesMap.set(id, { ...rec, label });
+    }
+  }, LOCAL);
 }
 
 function familyOf(rec: NodeRec): Family {
