@@ -1,3 +1,5 @@
+import type { NumberPar, ParMode } from "../ops/catalog";
+
 export interface FloatParam {
   kind: "float";
   name: string;
@@ -5,6 +7,9 @@ export interface FloatParam {
   max: number;
   value: number;
   label: string;
+  /** Like an op's number par: "expression" cooks `expr` on the CPU every frame. */
+  mode?: ParMode;
+  expr?: string;
 }
 
 export interface ColorParam {
@@ -15,6 +20,57 @@ export interface ColorParam {
 }
 
 export type ShaderParam = FloatParam | ColorParam;
+
+/** What a parameter row writes: a number, a color, or an op-style { mode, value, expr } patch. */
+export type ShaderParamPatch = number | [number, number, number] | { mode?: ParMode; value?: number; expr?: string };
+
+/** A float uniform seen as an op number par, so it shares the par row and resolvePars. */
+export function shaderNumberPar(param: FloatParam): NumberPar {
+  return {
+    kind: "number",
+    name: param.name,
+    mode: param.mode ?? "constant",
+    value: param.value,
+    expr: param.expr ?? "",
+    min: param.min,
+    max: param.max,
+  };
+}
+
+export function patchShaderParam(param: ShaderParam, patch: ShaderParamPatch): ShaderParam {
+  if (param.kind === "color") return Array.isArray(patch) ? { ...param, value: patch } : param;
+  if (Array.isArray(patch)) return param;
+  if (typeof patch === "number") return Number.isFinite(patch) ? { ...param, mode: "constant", value: patch } : param;
+  const next = { ...param };
+  if (patch.mode) next.mode = patch.mode;
+  if (typeof patch.value === "number" && Number.isFinite(patch.value)) next.value = patch.value;
+  if (typeof patch.expr === "string") next.expr = patch.expr;
+  return next;
+}
+
+/**
+ * Room encoding. A plain constant float stays a bare number and a color an [r, g, b], as before.
+ * A float with an expression is the op par string "n:<mode>:<value>:<expr>".
+ */
+export function encodeShaderParam(param: ShaderParam): number | [number, number, number] | string {
+  if (param.kind === "color") return param.value;
+  if (!param.expr && param.mode !== "expression") return param.value;
+  return `n:${param.mode ?? "constant"}:${param.value}:${encodeURIComponent(param.expr ?? "")}`;
+}
+
+export function decodeShaderParam(param: ShaderParam, raw: unknown): ShaderParam {
+  if (param.kind === "color") return Array.isArray(raw) && raw.length === 3 ? { ...param, value: [Number(raw[0]), Number(raw[1]), Number(raw[2])] } : param;
+  if (typeof raw === "number") return { ...param, value: raw, mode: "constant", expr: "" };
+  if (typeof raw !== "string" || !raw.startsWith("n:")) return param;
+  const [mode, value, ...expr] = raw.slice(2).split(":");
+  const number = Number(value);
+  return {
+    ...param,
+    mode: mode === "expression" ? "expression" : "constant",
+    value: Number.isFinite(number) ? number : param.value,
+    expr: decodeURIComponent(expr.join(":")),
+  };
+}
 
 export interface ParsedShader {
   channels: number[];

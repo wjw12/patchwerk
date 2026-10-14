@@ -13,7 +13,7 @@ import { create } from "zustand";
 import { demoGraph } from "./demo";
 import { rfType, wireStyle, type Family } from "./family";
 import { TEMPLATE } from "./engine/sources";
-import { parseShader, type ShaderParam } from "./engine/wrap";
+import { parseShader, patchShaderParam, type ShaderParam, type ShaderParamPatch } from "./engine/wrap";
 import {
   applyParOverrides,
   createOpData,
@@ -78,7 +78,7 @@ export interface GraphState {
   onEdgesChange: (changes: EdgeChange[]) => void;
   onConnect: OnConnect;
   updateDraft: (id: string, draft: string) => void;
-  setParam: (id: string, name: string, value: number | [number, number, number]) => void;
+  setParam: (id: string, name: string, value: ShaderParamPatch) => void;
   setOpPar: (id: string, name: string, patch: ParOverride & { text?: string; menu?: string }) => void;
   setBypass: (id: string, bypass: boolean) => void;
   rename: (id: string, label: string) => void;
@@ -152,7 +152,7 @@ export function mergeParams(prev: ShaderParam[], next: ShaderParam[]): ShaderPar
   return next.map((param) => {
     const old = prev.find((item) => item.name === param.name && item.kind === param.kind);
     if (!old) return param;
-    if (param.kind === "float" && old.kind === "float") return { ...param, value: old.value };
+    if (param.kind === "float" && old.kind === "float") return { ...param, value: old.value, mode: old.mode, expr: old.expr };
     if (param.kind === "color" && old.kind === "color") return { ...param, value: old.value };
     return param;
   });
@@ -221,12 +221,7 @@ export const useGraph = create<GraphState>((set, get) => ({
           ...node,
           data: {
             ...node.data,
-            params: node.data.params.map((param) => {
-              if (param.name !== name) return param;
-              if (param.kind === "float" && typeof value === "number") return { ...param, value };
-              if (param.kind === "color" && Array.isArray(value)) return { ...param, value };
-              return param;
-            }),
+            params: node.data.params.map((param) => (param.name === name ? patchShaderParam(param, value) : param)),
           },
         };
       }),
@@ -383,8 +378,19 @@ function uniqueLabel(want: string, nodes: PNode[], self?: string): string {
 
 /** Points op('old') expressions and op-name parameters at the new label. Unchanged nodes keep identity. */
 function followRename(node: PNode, old: string, next: string): PNode {
-  if (node.data.kind !== "op") return node;
   const call = new RegExp(`op\\(\\s*(['"])${old.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\1\\s*\\)`, "g");
+  if (node.data.kind === "shader") {
+    let moved = false;
+    const params = node.data.params.map((param): ShaderParam => {
+      if (param.kind !== "float" || !param.expr) return param;
+      const expr = param.expr.replace(call, (_match, quote: string) => `op(${quote}${next}${quote})`);
+      if (expr === param.expr) return param;
+      moved = true;
+      return { ...param, expr };
+    });
+    return moved ? { ...node, data: { ...node.data, params } } : node;
+  }
+  if (node.data.kind !== "op") return node;
   let changed = false;
   const pars = node.data.pars.map((par): Par => {
     if (par.kind === "number" && par.expr) {

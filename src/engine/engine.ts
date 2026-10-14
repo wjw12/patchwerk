@@ -14,7 +14,7 @@ import { useGraph } from "../store";
 import type { PNode } from "../store";
 import { FULLSCREEN_VS } from "./fullscreen";
 import { COPY_FS, PASSTHROUGH } from "./sources";
-import { compilerErrors, parseShader, wrapShader, type ShaderParam } from "./wrap";
+import { compilerErrors, parseShader, shaderNumberPar, wrapShader, type ShaderParam } from "./wrap";
 const GPU_TIMEOUT = "GPU timeout / context lost. Running the last good version; edit the shader to try again.";
 /** How long after a commit a context loss is still blamed on it. */
 const SUSPECT_MS = 10_000;
@@ -1056,8 +1056,10 @@ export class Engine {
     }
     values.iChannelResolution = resolutions;
     const live = node.data.kind === "shader" ? node.data.params : params;
+    const floats = live.filter((param) => param.kind === "float").map(shaderNumberPar);
+    const cooked = resolvePars(node.id, floats, this.exprEnv(nodes)).num;
     for (const param of live) {
-      values[param.name] = param.kind === "float" ? param.value : param.value;
+      values[param.name] = param.kind === "float" ? (cooked[param.name] ?? param.value) : param.value;
     }
     return values;
   }

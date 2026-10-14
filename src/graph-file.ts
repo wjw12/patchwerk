@@ -1,6 +1,6 @@
 import type { Edge } from "@xyflow/react";
 import { rfType, wireStyle, type Family } from "./family";
-import { parseShader, type ShaderParam } from "./engine/wrap";
+import { parseShader, patchShaderParam, type ShaderParam } from "./engine/wrap";
 import { applyParOverrides, createOpData, type ParOverride } from "./ops/catalog";
 import type { AudioData, OutData, PNode, ShaderData } from "./store";
 
@@ -23,7 +23,7 @@ interface GraphNode {
   x?: number;
   y?: number;
   bypass?: boolean;
-  params?: Record<string, number | string | number[]>;
+  params?: Record<string, number | string | number[] | { mode?: "constant" | "expression"; value?: number; expr?: string }>;
   pars?: Record<string, ParOverride>;
 }
 
@@ -102,7 +102,9 @@ function applyOverrides(params: ShaderParam[], overrides: GraphNode["params"]): 
   return params.map((param) => {
     const next = overrides[param.name];
     if (next == null) return param;
-    if (param.kind === "float" && typeof next === "number") return { ...param, value: next };
+    if (param.kind === "float" && (typeof next === "number" || (typeof next === "object" && !Array.isArray(next)))) {
+      return patchShaderParam(param, next);
+    }
     if (param.kind === "color" && typeof next === "string") return { ...param, value: hexRgb(next) };
     if (param.kind === "color" && Array.isArray(next) && next.length === 3) {
       return { ...param, value: [Number(next[0]), Number(next[1]), Number(next[2])] };

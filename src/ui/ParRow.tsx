@@ -1,14 +1,20 @@
 import { useEffect, useRef, useState } from "react";
 import { useLive } from "../engine/live";
+import type { ParOverride } from "../ops/catalog";
 import { useGraph, type Par } from "../store";
 
-export function ParRow({ id, par }: { id: string; par: Par }) {
+type ParPatch = ParOverride & { text?: string; menu?: string };
+/** Where a row writes. Ops default to setOpPar; a shader TOP passes its own setter. */
+export type ParSetter = (name: string, patch: ParPatch) => void;
+
+export function ParRow({ id, par, label, set }: { id: string; par: Par; label?: string; set?: ParSetter }) {
   const setOpPar = useGraph((state) => state.setOpPar);
+  const write: ParSetter = set ?? ((name, patch) => setOpPar(id, name, patch));
   if (par.kind === "menu") {
     return (
       <label className="par-row">
-        <span>{par.name}</span>
-        <select value={par.value} onChange={(event) => setOpPar(id, par.name, { menu: event.target.value })}>
+        <span>{label ?? par.name}</span>
+        <select value={par.value} onChange={(event) => write(par.name, { menu: event.target.value })}>
           {par.options.map((option) => (
             <option key={option} value={option}>
               {option}
@@ -21,16 +27,35 @@ export function ParRow({ id, par }: { id: string; par: Par }) {
   if (par.kind === "text") {
     return (
       <label className="par-row">
-        <span>{par.name}</span>
-        <input value={par.value} onChange={(event) => setOpPar(id, par.name, { text: event.target.value })} />
+        <span>{label ?? par.name}</span>
+        <input value={par.value} onChange={(event) => write(par.name, { text: event.target.value })} />
       </label>
     );
   }
-  return <NumberRow id={id} par={par} />;
+  return <NumberRow id={id} par={par} label={label ?? par.name} write={write} />;
 }
 
-function NumberRow({ id, par }: { id: string; par: Extract<Par, { kind: "number" }> }) {
-  const setOpPar = useGraph((state) => state.setOpPar);
+/** A vec3 @color uniform. */
+export function ColorRow({ label, value, onChange }: { label: string; value: [number, number, number]; onChange: (rgb: [number, number, number]) => void }) {
+  return (
+    <label className="par-row">
+      <span>{label}</span>
+      <input type="color" className="par-color" value={rgbHex(value)} onChange={(event) => onChange(hexRgb(event.target.value))} />
+    </label>
+  );
+}
+
+function rgbHex([r, g, b]: [number, number, number]): string {
+  const byte = (channel: number) => Math.round(Math.min(1, Math.max(0, channel)) * 255).toString(16).padStart(2, "0");
+  return `#${byte(r)}${byte(g)}${byte(b)}`;
+}
+
+function hexRgb(hex: string): [number, number, number] {
+  const body = hex.replace("#", "");
+  return [parseInt(body.slice(0, 2), 16) / 255, parseInt(body.slice(2, 4), 16) / 255, parseInt(body.slice(4, 6), 16) / 255];
+}
+
+function NumberRow({ id, par, label, write }: { id: string; par: Extract<Par, { kind: "number" }>; label: string; write: ParSetter }) {
   const live = useLive(id, par.name);
   const expressing = par.mode === "expression";
   const shown = expressing ? (live?.cooked ?? par.value) : par.value;
@@ -52,13 +77,13 @@ function NumberRow({ id, par }: { id: string; par: Extract<Par, { kind: "number"
         }
       }}
       onDrop={(event) => {
-        const label = event.dataTransfer.getData("application/x-patchwerk-chop");
-        if (!label) return;
+        const chop = event.dataTransfer.getData("application/x-patchwerk-chop");
+        if (!chop) return;
         event.preventDefault();
-        setOpPar(id, par.name, { mode: "expression", expr: `op('${label}')['chan1']` });
+        write(par.name, { mode: "expression", expr: `op('${chop}')['chan1']` });
       }}
     >
-      <span>{par.name}</span>
+      <span>{label}</span>
       <input
         type="range"
         min={par.min}
@@ -66,7 +91,7 @@ function NumberRow({ id, par }: { id: string; par: Extract<Par, { kind: "number"
         step={step}
         value={clamp(shown, par.min, par.max)}
         disabled={expressing}
-        onChange={(event) => setOpPar(id, par.name, { value: Number(event.target.value) })}
+        onChange={(event) => write(par.name, { value: Number(event.target.value) })}
       />
       <input
         className="par-num"
@@ -78,7 +103,7 @@ function NumberRow({ id, par }: { id: string; par: Extract<Par, { kind: "number"
           setTyped(raw);
           // An empty or partial box ("", "-") is not a number yet; only commit real ones.
           const value = Number(raw);
-          if (raw.trim() !== "" && Number.isFinite(value)) setOpPar(id, par.name, { value });
+          if (raw.trim() !== "" && Number.isFinite(value)) write(par.name, { value });
         }}
         onBlur={() => setTyped(null)}
         onKeyDown={(event) => {
@@ -90,8 +115,8 @@ function NumberRow({ id, par }: { id: string; par: Extract<Par, { kind: "number"
         className={expressing ? "is-on" : ""}
         title="expression"
         onClick={() => {
-          if (expressing) setOpPar(id, par.name, { mode: "constant", value: shown });
-          else setOpPar(id, par.name, { mode: "expression", expr: par.expr || String(par.value) });
+          if (expressing) write(par.name, { mode: "constant", value: shown });
+          else write(par.name, { mode: "expression", expr: par.expr || String(par.value) });
         }}
       >
         ƒ
@@ -102,7 +127,7 @@ function NumberRow({ id, par }: { id: string; par: Extract<Par, { kind: "number"
           value={par.expr}
           spellCheck={false}
           onChange={(event) => {
-            setOpPar(id, par.name, { expr: event.target.value });
+            write(par.name, { expr: event.target.value });
             setTyping(true);
             window.clearTimeout(pause.current);
             pause.current = window.setTimeout(() => setTyping(false), 400);

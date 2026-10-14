@@ -1,0 +1,44 @@
+{
+  "viewer": "out",
+  "nodes": [
+    { "id": "lfo1", "kind": "op", "family": "CHOP", "type": "lfo", "label": "lfo1", "x": 40, "y": 20, "pars": { "frequency": 0.5 } },
+    {
+      "id": "math1",
+      "kind": "op",
+      "family": "CHOP",
+      "type": "math",
+      "label": "math1",
+      "x": 250,
+      "y": 20,
+      "pars": { "from1": -1, "from2": 1, "to1": 3, "to2": 22 }
+    },
+    { "id": "e_rings", "kind": "op", "family": "CHOP", "type": "null", "label": "e_rings", "x": 460, "y": 20 },
+    {
+      "id": "rings",
+      "kind": "shader",
+      "label": "rings",
+      "shader": "comp-rings.glsl",
+      "x": 40,
+      "y": 200,
+      "params": { "uCount": { "mode": "expression", "expr": "op('e_rings')['chan1']" } }
+    },
+    {
+      "id": "warp",
+      "kind": "shader",
+      "label": "warp",
+      "shader": "warp.glsl",
+      "x": 40,
+      "y": 380,
+      "params": { "uScale": { "mode": "expression", "expr": "1.4 + sin(absTime.seconds * 2) * 0.9" } }
+    },
+    { "id": "mix", "kind": "shader", "label": "mix", "shader": "mixer.glsl", "x": 340, "y": 280 },
+    { "id": "out", "kind": "out", "label": "out", "x": 640, "y": 280 }
+  ],
+  "edges": [
+    { "source": "lfo1", "target": "math1", "targetHandle": "in0" },
+    { "source": "math1", "target": "e_rings", "targetHandle": "in0" },
+    { "source": "rings", "target": "mix", "targetHandle": "ch0" },
+    { "source": "warp", "target": "mix", "targetHandle": "ch1" },
+    { "source": "mix", "target": "out", "targetHandle": "ch0" }
+  ]
+}

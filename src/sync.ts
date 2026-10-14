@@ -4,7 +4,7 @@
 //   nodes      id            -> { kind, label, x, y }
 //   code       id            -> Y.Text (the shader draft; CodeMirror binds to it)
 //   committed  id            -> last program that compiled and passed the test frame
-//   params     "id/name"     -> number | [r, g, b]
+//   params     "id/name"     -> number | [r, g, b] | encoded par string
 //   edges      id            -> { source, target, targetHandle }
 //
 // Per-client state (selection, measured size, compile status) never leaves zustand.
@@ -14,7 +14,7 @@ import type { Awareness } from "y-protocols/awareness";
 import * as Y from "yjs";
 import { create } from "zustand";
 import { engine } from "./engine/engine";
-import { parseShader, type ShaderParam } from "./engine/wrap";
+import { decodeShaderParam, encodeShaderParam, parseShader } from "./engine/wrap";
 import { identity } from "./room";
 import { wireStyle, type Family } from "./family";
 import { createOpData, type OpData, type Par } from "./ops/catalog";
@@ -193,7 +193,8 @@ function writeNode(node: PNode): void {
   if (node.data.committed && committedMap.get(node.id) !== node.data.committed) committedMap.set(node.id, node.data.committed);
   for (const param of node.data.params) {
     const key = `${node.id}/${param.name}`;
-    if (!sameValue(paramsMap.get(key), param.value)) paramsMap.set(key, param.value);
+    const encoded = encodeShaderParam(param);
+    if (!sameValue(paramsMap.get(key), encoded)) paramsMap.set(key, encoded);
   }
 }
 
@@ -307,12 +308,7 @@ function buildNode(id: string, rec: NodeRec, old: PNode | undefined): PNode {
   const was = old?.data.kind === "shader" ? old.data : null;
   const parsed = was && was.draft === draft ? null : parseShader(draft);
   const schema = parsed ? mergeParams(was?.params ?? [], parsed.params) : (was?.params ?? []);
-  const params = schema.map((param): ShaderParam => {
-    const value = paramsMap.get(`${id}/${param.name}`);
-    if (param.kind === "float" && typeof value === "number") return { ...param, value };
-    if (param.kind === "color" && Array.isArray(value)) return { ...param, value };
-    return param;
-  });
+  const params = schema.map((param) => decodeShaderParam(param, paramsMap.get(`${id}/${param.name}`)));
   const data: ShaderData = {
     kind: "shader",
     family: "TOP",
@@ -396,7 +392,7 @@ function sameNode(a: PNode, b: PNode): boolean {
   if (a.data.params.length !== theirs.length) return false;
   return a.data.params.every((param, i) => {
     const other = theirs[i];
-    return other !== undefined && param.name === other.name && sameValue(param.value, other.value);
+    return other !== undefined && param.name === other.name && sameValue(encodeShaderParam(param), encodeShaderParam(other));
   });
 }
 
