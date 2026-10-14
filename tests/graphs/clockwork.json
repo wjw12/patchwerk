@@ -1,0 +1,12 @@
+{
+  "viewer": "out",
+  "nodes": [
+    { "id": "warp", "kind": "shader", "label": "warp", "shader": "warp.glsl", "x": 40, "y": 80 },
+    { "id": "clock", "kind": "shader", "label": "clockwork", "shader": "paste-clockwork.glsl", "x": 340, "y": 80 },
+    { "id": "out", "kind": "out", "label": "out", "x": 640, "y": 80 }
+  ],
+  "edges": [
+    { "source": "warp", "target": "clock", "targetHandle": "ch0" },
+    { "source": "clock", "target": "out", "targetHandle": "ch0" }
+  ]
+}
