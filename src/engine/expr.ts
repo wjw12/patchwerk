@@ -2,7 +2,27 @@
 //   absTime.seconds * 0.08
 //   op('e_amp')['chan1']
 //   + - * / and parentheses
+//   sin cos abs floor fract sqrt min max pow mod clamp, and pi
 // Not Python, not GLSL, not eval().
+
+type Func = (...args: number[]) => number;
+
+const FUNCS: Record<string, Func> = {
+  sin: (x) => Math.sin(x),
+  cos: (x) => Math.cos(x),
+  abs: (x) => Math.abs(x),
+  floor: (x) => Math.floor(x),
+  fract: (x) => x - Math.floor(x),
+  sqrt: (x) => Math.sqrt(x),
+  min: (a, b) => Math.min(a, b),
+  max: (a, b) => Math.max(a, b),
+  pow: (a, b) => Math.pow(a, b),
+  mod: (a, b) => {
+    if (b === 0) throw new ExprError("mod by zero");
+    return a - b * Math.floor(a / b);
+  },
+  clamp: (x, lo, hi) => Math.min(hi, Math.max(lo, x)),
+};
 
 export class ExprError extends Error {
   constructor(message: string) {
@@ -95,7 +115,30 @@ class Parser {
     const ident = this.ident();
     if (ident === "absTime") return this.absTime();
     if (ident === "op") return this.lookup();
+    if (ident === "pi") return Math.PI;
+    const fn = FUNCS[ident];
+    if (fn) return this.call(ident, fn);
     throw new ExprError(`unknown name "${ident || this.src[this.i] || "end"}"`);
+  }
+
+  private call(name: string, fn: Func): number {
+    this.skip();
+    if (this.src[this.i] !== "(") throw new ExprError(`expected ${name}(...)`);
+    this.i += 1;
+    const args: number[] = [];
+    this.skip();
+    if (this.src[this.i] !== ")") {
+      for (;;) {
+        args.push(this.parseExpr());
+        this.skip();
+        if (this.src[this.i] !== ",") break;
+        this.i += 1;
+      }
+    }
+    if (this.src[this.i] !== ")") throw new ExprError(`missing ')' after ${name}(`);
+    this.i += 1;
+    if (args.length !== fn.length) throw new ExprError(`${name}() takes ${fn.length} argument${fn.length === 1 ? "" : "s"}`);
+    return fn(...args);
   }
 
   private absTime(): number {
