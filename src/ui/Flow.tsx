@@ -148,9 +148,13 @@ function Stage() {
   );
 }
 
+// A focused slider, color well or checkbox has no text undo, so Ctrl+Z there still undoes the graph.
+const TEXT_INPUTS = new Set(["text", "number", "search", "email", "url", "password", "tel"]);
+
 function isTyping(target: EventTarget | null): boolean {
   if (!(target instanceof HTMLElement)) return false;
-  return target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.tagName === "SELECT" || target.isContentEditable;
+  if (target instanceof HTMLInputElement) return TEXT_INPUTS.has(target.type);
+  return target.tagName === "TEXTAREA" || target.tagName === "SELECT" || target.isContentEditable;
 }
 
 export type { Connection, Edge };
