@@ -27,6 +27,8 @@ Textures stay on the GPU. One hidden WebGL2 canvas cooks every TOP. Node preview
 
 `/r/<slug>` is a room; `/` redirects to a fresh one. One Y.Doc per room, flat maps keyed by node id so every slider, position and wire is its own last-writer-wins key. Shader code is a `Y.Text` that CodeMirror binds to, so two people can type in one shader. Selection, compile status and node size stay local. Cursors over the viewer go through awareness into `iCursors[1..7]`.
 
+Ctrl+Z undoes only your own graph edits. The header's graph menu imports, exports and loads the `tests/graphs` examples into the room for everyone. Audio input (off, mic, or a looping file) is per tab and never shared.
+
 `?graph=` / `?t=` / `?frame=` (the visual-test session) never joins a room.
 
 ## Now
