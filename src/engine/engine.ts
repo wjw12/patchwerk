@@ -94,6 +94,8 @@ export class Engine {
   private settleCook = false;
   private settledSeen: { edges: unknown; data: Map<string, unknown> } = { edges: null, data: new Map() };
   private floatLinear = false;
+  /** Where the last viewer blit put the picture, as fractions of the viewer canvas (y from the top). */
+  private picture: { x: number; y: number; w: number; h: number } | null = null;
   /** Bumped once per cook; see Runtime.cooked. */
   private cookSerial = 0;
   private prevWanted = new Set<string>();
@@ -912,6 +914,7 @@ export class Engine {
     const dest = this.viewer;
     const ctx = this.viewerCtx;
     if (!dest || !ctx) return;
+    this.picture = null;
     if (node.data.family === "CHOP") {
       this.paintScope(dest, ctx, this.chopHist.get(node.id) ?? []);
       return;
@@ -1176,6 +1179,7 @@ export class Engine {
     }
     const x = Math.floor((size.w - w) / 2);
     const y = Math.floor((size.h - h) / 2);
+    this.picture = { x: x / size.w, y: y / size.h, w: w / size.w, h: h / size.h };
     this.blitTexture(output.tex, w, h);
     if (w !== size.w || h !== size.h) {
       ctx.fillStyle = "#05060a";
@@ -1505,8 +1509,12 @@ export class Engine {
 
   private track(canvas: HTMLCanvasElement, event: PointerEvent): void {
     const rect = canvas.getBoundingClientRect();
-    this.pointer.x = clamp01((event.clientX - rect.left) / Math.max(rect.width, 1));
-    this.pointer.y = clamp01(1 - (event.clientY - rect.top) / Math.max(rect.height, 1));
+    // Normalized to the letterboxed picture, not the whole panel, so iMouse lands on what you point at.
+    const box = this.picture ?? { x: 0, y: 0, w: 1, h: 1 };
+    const u = (event.clientX - rect.left) / Math.max(rect.width, 1);
+    const v = (event.clientY - rect.top) / Math.max(rect.height, 1);
+    this.pointer.x = clamp01((u - box.x) / box.w);
+    this.pointer.y = clamp01(1 - (v - box.y) / box.h);
     this.pointer.seen = true;
     if (this.pointer.down) {
       this.pointer.dragX = this.pointer.x;
