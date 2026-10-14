@@ -49,7 +49,7 @@ edges      id          -> { source, target, targetHandle }   // id is React Flow
 
 Local only, never in the doc: `selected`, `measured`, `dragging`, compile `status`/`error`, edge style, param schema.
 
-Awareness per client: `user {id, name, color, colorLight}`, `cursor {x, y, down} | null` (viewer space, y up), `editing: nodeId | null`.
+Awareness per client: `user {id, name, color, colorLight}`, `pointer {x, y, down} | null` (viewer space, y up; `cursor` is y-codemirror's text caret), `editing: nodeId | null`.
 
 ## 3. Client (`src/sync.ts`)
 

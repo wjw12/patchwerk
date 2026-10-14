@@ -464,7 +464,8 @@ function sameValue(a: ParamValue | undefined, b: ParamValue): boolean {
 
 interface PeerState {
   user?: Peer;
-  cursor?: Cursor | null;
+  // Not `cursor`: y-codemirror owns that field for the text caret ({ anchor, head }).
+  pointer?: Cursor | null;
   editing?: string | null;
 }
 
@@ -478,7 +479,7 @@ function readPeers(awareness: Awareness): void {
     const state = raw as PeerState;
     if (!state.user) return;
     peers.push({ ...state.user, editing: state.editing ?? null });
-    if (state.cursor) cursors.push(state.cursor);
+    if (state.pointer) cursors.push(state.pointer);
   });
   engine.setRoomCursors(cursors);
   // Cursors move at pointer rate; only re-render React when membership or focus changes.
@@ -496,7 +497,7 @@ function publishCursor(awareness: Awareness, cursor: Cursor): void {
   cursorPending = cursor;
   if (!idle) return;
   requestAnimationFrame(() => {
-    awareness.setLocalStateField("cursor", cursorPending);
+    awareness.setLocalStateField("pointer", cursorPending);
     cursorPending = null;
   });
 }
