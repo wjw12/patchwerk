@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useLive } from "../engine/live";
 import { useGraph, type Par } from "../store";
 
@@ -34,7 +34,11 @@ function NumberRow({ id, par }: { id: string; par: Extract<Par, { kind: "number"
   const live = useLive(id, par.name);
   const expressing = par.mode === "expression";
   const shown = expressing ? (live?.cooked ?? par.value) : par.value;
-  const error = expressing ? (live?.error ?? null) : null;
+  // Half-typed expressions fail; hold the red state until typing pauses or the field is left.
+  const [typing, setTyping] = useState(false);
+  const pause = useRef(0);
+  useEffect(() => () => window.clearTimeout(pause.current), []);
+  const error = expressing && !typing ? (live?.error ?? null) : null;
   const step = par.step ?? Math.max((par.max - par.min) / 200, 0.001);
   // What the number box shows while it is being typed in; null shows the parameter.
   const [typed, setTyped] = useState<string | null>(null);
@@ -97,7 +101,16 @@ function NumberRow({ id, par }: { id: string; par: Extract<Par, { kind: "number"
           className="par-expr"
           value={par.expr}
           spellCheck={false}
-          onChange={(event) => setOpPar(id, par.name, { expr: event.target.value })}
+          onChange={(event) => {
+            setOpPar(id, par.name, { expr: event.target.value });
+            setTyping(true);
+            window.clearTimeout(pause.current);
+            pause.current = window.setTimeout(() => setTyping(false), 400);
+          }}
+          onBlur={() => {
+            window.clearTimeout(pause.current);
+            setTyping(false);
+          }}
           onKeyDown={(event) => event.stopPropagation()}
         />
       )}
