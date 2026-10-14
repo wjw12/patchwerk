@@ -62,6 +62,7 @@ function Stage() {
           if (node) setWire(CHROME[node.data.family].wire);
         }}
         fitView
+        zoomOnDoubleClick={false}
         colorMode="dark"
         proOptions={{ hideAttribution: true }}
         defaultEdgeOptions={{ style: { stroke: CHROME.TOP.wire, strokeWidth: 1.8 } }}
