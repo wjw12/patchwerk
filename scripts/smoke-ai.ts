@@ -18,7 +18,9 @@ const follow = flag("--follow");
 const stopAfter = flag("--stop-after-tools");
 const goal = args[0] ?? "make the point cloud bigger and red, then confirm by looking at out";
 const room = `ai-${Date.now().toString(36)}`;
-const url = `http://localhost:5173/r/${room}`;
+const base = process.env.SMOKE_BASE ?? "http://localhost:5173";
+const url = `${base}/r/${room}`;
+const healthUrl = process.env.SMOKE_HEALTH ?? "http://localhost:3000/health";
 const TURN_MS = 240_000;
 const READS = new Set(["get_graph", "read_shader", "view"]);
 
@@ -31,7 +33,7 @@ function check(name: string, ok: boolean, detail = ""): void {
 }
 
 async function health(): Promise<number> {
-  const body = (await (await fetch("http://localhost:3000/health")).json()) as { ai: { sessions: number } };
+  const body = (await (await fetch(healthUrl)).json()) as { ai: { sessions: number } };
   return body.ai.sessions;
 }
 
