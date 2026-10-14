@@ -15,6 +15,7 @@ export interface CloudDraw {
   p: WebGLTexture;
   n: number;
   view: Float32Array;
+  proj: Float32Array;
   viewProj: Float32Array;
   scale: number;
   focus: number;
@@ -114,9 +115,7 @@ export class ImageOps {
       this.clear(target);
       return target.attachments[0] as WebGLTexture;
     }
-    // Phong spheres are solid, so at render size they would fill a thumb; keep them in proportion to the cook.
-    const sized = cloud.phong ? { ...cloud, scale: (cloud.scale * height) / COOK_H } : cloud;
-    this.drawCloud(sized, target, width, height, [1, 1, 1]);
+    this.drawCloud(cloud, target, width, height, [1, 1, 1]);
     return target.attachments[0] as WebGLTexture;
   }
 

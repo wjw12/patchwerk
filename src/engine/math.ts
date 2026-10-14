@@ -81,15 +81,21 @@ export function camera(
   fov: number,
   aspect: number,
   target: readonly number[] = [0, 0, 0],
-): { view: Float32Array; viewProj: Float32Array } {
+): { view: Float32Array; proj: Float32Array; viewProj: Float32Array } {
   // An eye on its own target has no direction; look down -z instead of dividing by zero.
   const same = Math.hypot(tx - (target[0] ?? 0), ty - (target[1] ?? 0), tz - (target[2] ?? 0)) < 1e-6;
   const view = lookAt([tx, ty, tz], same ? [tx, ty, tz - 1] : target, [0, 1, 0]);
   const proj = perspective(fov, aspect, 0.05, 100);
-  return { view, viewProj: multiply(proj, view) };
+  return { view, proj, viewProj: multiply(proj, view) };
 }
 
-export function orbitCamera(yaw: number, pitch: number, dist: number, fov: number, aspect: number): { view: Float32Array; viewProj: Float32Array } {
+export function orbitCamera(
+  yaw: number,
+  pitch: number,
+  dist: number,
+  fov: number,
+  aspect: number,
+): { view: Float32Array; proj: Float32Array; viewProj: Float32Array } {
   const cp = Math.cos(pitch);
   const sp = Math.sin(pitch);
   const cy = Math.cos(yaw);

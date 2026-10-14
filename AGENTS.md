@@ -38,7 +38,7 @@ The collapsible panel on the left talks to `/ai` on the room server, which holds
 
 ## Now
 
-The boot graph is a POP cloud. CHOP lfo, pattern, audioband, math, and null cook one sample per frame on the CPU. Expressions (`absTime.seconds`, `op('name')['chan1']`, `+ - * /`, `sin`, `fract`, `mod` and a few more) are evaluated on the CPU and can point at a CHOP by its label. POP pointgen, noise, mathmix, mathcombine, and transform cook as RGBA32F textures, one texel per point. A point MAT draws them additively into a render TOP, then bloom, then out; a phong MAT draws them as opaque lit spheres with depth, lit by light COMPs (point, distant, ambient) that the render TOP picks with its `lights` pattern. The playbar pauses `absTime`. The viewer follows the selection. ShaderToy TOPs, audio, and `// @feedback` still cook; load that graph with `?graph=/tests/graphs/melt.json`.
+The boot graph is a POP cloud. CHOP lfo, pattern, audioband, math, and null cook one sample per frame on the CPU. Expressions (`absTime.seconds`, `op('name')['chan1']`, `+ - * /`, `sin`, `fract`, `mod` and a few more) are evaluated on the CPU and can point at a CHOP by its label. POP pointgen, noise, mathmix, mathcombine, and transform cook as RGBA32F textures, one texel per point. A point MAT draws them additively into a render TOP, then bloom, then out; a phong MAT ray-traces each point as a sphere of world-unit radius with true depth, lit by light COMPs (point, distant, cone, ambient) that the render TOP picks with its `lights` pattern. The playbar pauses `absTime`. The viewer follows the selection. ShaderToy TOPs, audio, and `// @feedback` still cook; load that graph with `?graph=/tests/graphs/melt.json`.
 
 ## Next
 

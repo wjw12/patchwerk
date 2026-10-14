@@ -1028,9 +1028,12 @@ export class Engine {
     const dimmer = num.dimmer ?? 1;
     const kind = resolved?.menu.lighttype;
     return {
-      kind: kind === "distant" || kind === "ambient" ? kind : "point",
+      kind: kind === "distant" || kind === "cone" || kind === "ambient" ? kind : "point",
       pos: [num.tx ?? 3, num.ty ?? 4, num.tz ?? 5],
+      look: [num.lookx ?? 0, num.looky ?? 0, num.lookz ?? 0],
       color: [(num.colorr ?? 1) * dimmer, (num.colorg ?? 1) * dimmer, (num.colorb ?? 1) * dimmer],
+      coneangle: num.coneangle ?? 45,
+      conedelta: num.conedelta ?? 10,
     };
   }
 
@@ -1833,6 +1836,7 @@ export function matchesPattern(pattern: string, label: string): boolean {
 
 function phongLook(num: Record<string, number>): PhongLook {
   return {
+    size: num.size ?? 0.05,
     diff: [num.diffr ?? 1, num.diffg ?? 1, num.diffb ?? 1],
     spec: [num.specr ?? 1, num.specg ?? 1, num.specb ?? 1],
     amb: [num.ambr ?? 0.15, num.ambg ?? 0.15, num.ambb ?? 0.15],

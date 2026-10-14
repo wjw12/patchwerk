@@ -40,7 +40,7 @@
       "label": "phong1",
       "x": 40,
       "y": 260,
-      "pars": { "scale": 16, "focus": 6, "diffr": 1, "diffg": 0.62, "diffb": 0.38, "specr": 1.4, "specg": 1.4, "specb": 1.4, "shininess": 60 }
+      "pars": { "size": 0.075, "diffr": 1, "diffg": 0.62, "diffb": 0.38, "specr": 1.4, "specg": 1.4, "specb": 1.4, "shininess": 60 }
     },
     { "id": "cam1", "kind": "op", "family": "COMP", "type": "cam", "label": "cam1", "x": 250, "y": 260, "pars": { "tz": 4.2, "ty": 0.6 } },
     {
@@ -51,7 +51,7 @@
       "label": "key",
       "x": 460,
       "y": 260,
-      "pars": { "tx": 3, "ty": 4, "tz": 4, "colorr": 1, "colorg": 0.92, "colorb": 0.8, "dimmer": 1.1 }
+      "pars": { "lighttype": "cone", "tx": 3, "ty": 4, "tz": 4, "coneangle": 30, "conedelta": 14, "colorr": 1, "colorg": 0.92, "colorb": 0.8, "dimmer": 1.2 }
     },
     {
       "id": "rim",
