@@ -452,6 +452,7 @@ export class Engine {
     this.fillAudio();
     this.cookOps(nodes, edges);
     if (this.present) {
+      this.ensureDrawingBuffer();
       if ((this.frame & 1) === 0 || this.launch.fixed) this.blitPreviews(nodes);
       this.drawChopPreviews(nodes);
       this.drawPopPreviews(nodes);
@@ -793,15 +794,13 @@ export class Engine {
 
   private paintScope(dest: HTMLCanvasElement, ctx: CanvasRenderingContext2D, samples: number[]): void {
     const size = this.viewerPixels();
-    dest.width = size.w;
-    dest.height = size.h;
+    fitCanvas(dest, size);
     this.stroke(ctx, samples, "#3dcf8a");
   }
 
   private paintPoints(dest: HTMLCanvasElement, ctx: CanvasRenderingContext2D, popId: string | null): void {
     const size = this.viewerPixels();
-    dest.width = size.w;
-    dest.height = size.h;
+    fitCanvas(dest, size);
     const pop = popId ? this.pops?.get(popId) : undefined;
     const position = pop?.attrs.get("P");
     if (!pop || !position || !this.imageOps) {
@@ -823,7 +822,6 @@ export class Engine {
     const gl = this.gl;
     const canvas = gl?.canvas as HTMLCanvasElement | undefined;
     if (!gl || !canvas) return;
-    this.ensureDrawingBuffer(Math.max(w, THUMB_W), Math.max(h, THUMB_H));
     this.blitTexture(tex, w, h);
     ctx.drawImage(canvas, 0, gl.drawingBufferHeight - h, w, h, 0, 0, ctx.canvas.width, ctx.canvas.height);
   }
@@ -983,7 +981,6 @@ export class Engine {
     const gl = this.gl;
     const canvas = gl?.canvas as HTMLCanvasElement | undefined;
     if (!gl || !canvas || !this.copy) return;
-    this.ensureDrawingBuffer(Math.max(THUMB_W, this.viewerPixels().w), Math.max(THUMB_H, this.viewerPixels().h));
     for (const node of nodes) {
       const ctx = this.previews.get(node.id);
       const output = this.outputTexture(node);
@@ -1003,9 +1000,7 @@ export class Engine {
     const output = this.outputTexture(node);
     if (!output) return;
     const size = this.viewerPixels();
-    this.ensureDrawingBuffer(Math.max(size.w, THUMB_W), Math.max(size.h, THUMB_H));
-    dest.width = size.w;
-    dest.height = size.h;
+    fitCanvas(dest, size);
     this.blitTexture(output.tex, size.w, size.h);
     ctx.drawImage(canvas, 0, gl.drawingBufferHeight - size.h, size.w, size.h, 0, 0, size.w, size.h);
   }
@@ -1247,13 +1242,15 @@ export class Engine {
     gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, 512, 2, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
   }
 
-  private ensureDrawingBuffer(w: number, h: number): void {
+  /**
+   * Sizes the hidden canvas once per presented frame to fit both a thumb and the viewer.
+   * Each blit only sets its viewport in the bottom-left corner and copies that rect out.
+   */
+  private ensureDrawingBuffer(): void {
     const canvas = this.gl?.canvas as HTMLCanvasElement | undefined;
     if (!canvas) return;
-    if (canvas.width !== w || canvas.height !== h) {
-      canvas.width = w;
-      canvas.height = h;
-    }
+    const size = this.viewerPixels();
+    fitCanvas(canvas, { w: Math.max(size.w, THUMB_W), h: Math.max(size.h, THUMB_H) });
   }
 
   private viewerPixels(): { w: number; h: number } {
@@ -1290,6 +1287,12 @@ export class Engine {
     this.failed = message;
     useGraph.getState().setGpuError(message);
   }
+}
+
+/** Assigning width or height clears a canvas even when the value is unchanged. */
+function fitCanvas(canvas: HTMLCanvasElement, size: { w: number; h: number }): void {
+  if (canvas.width !== size.w) canvas.width = size.w;
+  if (canvas.height !== size.h) canvas.height = size.h;
 }
 
 function writeTexel(pixels: Uint8Array, index: number, value: number): void {
