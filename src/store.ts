@@ -72,7 +72,6 @@ export interface GraphState {
   editorOpen: boolean;
   playing: boolean;
   palette: { x: number; y: number } | null;
-  mic: "off" | "live" | "denied";
   gpuError: string | null;
   onNodesChange: (changes: NodeChange<PNode>[]) => void;
   onEdgesChange: (changes: EdgeChange[]) => void;
@@ -88,7 +87,6 @@ export interface GraphState {
   setPlaying: (playing: boolean) => void;
   openPalette: (x: number, y: number) => void;
   closePalette: () => void;
-  setMic: (mic: GraphState["mic"]) => void;
   setGpuError: (message: string | null) => void;
   addOp: (family: Family, type: string, position?: { x: number; y: number }) => void;
   save: () => void;
@@ -195,7 +193,6 @@ export const useGraph = create<GraphState>((set, get) => ({
   editorOpen: false,
   playing: true,
   palette: null,
-  mic: "off",
   gpuError: null,
   onNodesChange: (changes) => set({ nodes: applyNodeChanges(changes, get().nodes) }),
   onEdgesChange: (changes) => set({ edges: applyEdgeChanges(changes, get().edges) }),
@@ -295,7 +292,6 @@ export const useGraph = create<GraphState>((set, get) => ({
   setPlaying: (playing) => set({ playing }),
   openPalette: (x, y) => set({ palette: { x, y } }),
   closePalette: () => set({ palette: null }),
-  setMic: (mic) => set({ mic }),
   setGpuError: (message) => set({ gpuError: message }),
   addOp: (family, type, position) => {
     const at = position ?? { x: 120 + Math.random() * 180, y: 80 + Math.random() * 140 };

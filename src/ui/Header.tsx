@@ -5,6 +5,7 @@ import { roomUrl } from "../room";
 import { clearSaved, savedGraph, useGraph } from "../store";
 import { redo, undo, useHistory, useSync } from "../sync";
 import { exportGraph, importFile, loadGraph, loadGraphFile } from "./graph-io";
+import { AudioInput } from "./AudioInput";
 import { Playbar } from "./Playbar";
 
 export function Header() {
@@ -46,6 +47,7 @@ export function Header() {
     <header className="topbar">
       <strong>patchwerk</strong>
       <Playbar />
+      <AudioInput />
       <span id="hud" ref={hud} />
       {room && (
         <div className={`room is-${status}`}>

@@ -1,5 +1,6 @@
 import { Background, BackgroundVariant, Controls, MiniMap, ReactFlow, ReactFlowProvider, useReactFlow, type Connection, type Edge } from "@xyflow/react";
 import { useEffect, useState } from "react";
+import { isAudioFile, playFile } from "../audio";
 import { CHROME } from "../family";
 import { isValidConnection, useGraph, type PNode } from "../store";
 import { beginGesture, breakUndo, endGesture, redo, undo } from "../sync";
@@ -103,6 +104,7 @@ function Stage() {
         if (!file) return;
         event.preventDefault();
         if (isGraphFile(file)) void importFile(file);
+        else if (isAudioFile(file)) void playFile(file);
       }}
     >
       <ReactFlow

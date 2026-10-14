@@ -1,4 +1,5 @@
 import { useEffect, useRef } from "react";
+import { rewindAudio } from "../audio";
 import { engine } from "../engine/engine";
 import { readSession } from "../session";
 import { useGraph } from "../store";
@@ -20,7 +21,10 @@ export function Playbar() {
       <button type="button" disabled={fixed} onClick={() => setPlaying(!playing)} title={playing ? "pause" : "play"}>
         {playing ? "❚❚" : "▶"}
       </button>
-      <button type="button" disabled={fixed} onClick={() => engine.resetClock()} title="reset time">
+      <button type="button" disabled={fixed} onClick={() => {
+          engine.resetClock();
+          rewindAudio();
+        }} title="reset time">
         ↺
       </button>
       <span id="abs-time" ref={clock} />

@@ -438,21 +438,9 @@ export class Engine {
     );
   }
 
-  async enableMic(): Promise<void> {
-    try {
-      const audio = new AudioContext();
-      await audio.resume();
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const source = audio.createMediaStreamSource(stream);
-      const analyser = audio.createAnalyser();
-      analyser.fftSize = 1024;
-      analyser.smoothingTimeConstant = 0.75;
-      source.connect(analyser);
-      this.analyser = analyser;
-      useGraph.getState().setMic("live");
-    } catch {
-      useGraph.getState().setMic("denied");
-    }
+  /** What the audio texture reads (src/audio.ts owns the mic or file behind it); null is the built-in test signal. */
+  setAnalyser(analyser: AnalyserNode | null): void {
+    this.analyser = analyser;
   }
 
   private boot(): void {

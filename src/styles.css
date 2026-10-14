@@ -64,6 +64,30 @@ button:hover { border-color: #8d7cff; }
 .topbar-actions button:disabled { opacity: 0.35; cursor: default; border-color: #34384a; }
 .topbar-actions .undo, .topbar-actions .redo { min-width: 28px; padding: 4px 6px; }
 
+.audio-input { display: flex; align-items: center; gap: 6px; font-size: 12px; color: #c8c2b8; white-space: nowrap; }
+.audio-input label { display: flex; align-items: center; gap: 6px; }
+.audio-input select {
+  font: inherit;
+  color: inherit;
+  background: #1c2030;
+  border: 1px solid #34384a;
+  border-radius: 4px;
+  padding: 2px 4px;
+}
+.audio-input.is-live select { border-color: #3dcf8a; }
+.audio-input.is-blocked select, .audio-input.is-error select { border-color: #d45b5b; }
+.audio-input button { padding: 2px 8px; max-width: 160px; overflow: hidden; text-overflow: ellipsis; }
+.audio-input em { font-style: normal; color: #ffb4b4; }
+.audio-input em.local {
+  padding: 1px 6px;
+  border: 1px dashed #4a4f66;
+  border-radius: 999px;
+  color: #8a90a8;
+  font-size: 10px;
+  cursor: help;
+}
+.viewer .audio-hint { margin-left: 8px; font-style: normal; font-size: 11px; color: #8a90a8; }
+
 .menu { position: relative; font-size: 13px; }
 .menu summary {
   list-style: none;
@@ -99,7 +123,7 @@ button:hover { border-color: #8d7cff; }
 .menu-body em { padding: 2px 8px; font-size: 10px; font-style: normal; letter-spacing: 0.08em; text-transform: uppercase; color: #8a90a8; }
 
 .flow.is-dropping::after {
-  content: "drop a graph .json to load it into the room";
+  content: "drop a graph .json to load it into the room, or an audio file to listen to";
   position: absolute;
   inset: 12px;
   display: grid;
