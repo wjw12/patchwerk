@@ -80,7 +80,7 @@ export function OpNode({ id, data, selected }: NodeProps<PNode>) {
         <span>{typeName}</span>
         {data.family === "CHOP" && (
           <em
-            className="chop-drag"
+            className="chop-drag nodrag nopan"
             draggable
             title="drag onto a parameter"
             onPointerDown={(event) => event.stopPropagation()}
