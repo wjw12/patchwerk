@@ -191,6 +191,8 @@ button:hover { border-color: #8d7cff; }
   color: #c8c2ff;
   pointer-events: none;
 }
+.port-label.is-unused { opacity: 0.35; }
+.react-flow__handle.is-unused { opacity: 0.35; outline: 1px dashed #8a90a8; outline-offset: 1px; }
 .par-row {
   display: grid;
   grid-template-columns: 72px minmax(0, 1fr) 64px 28px;

@@ -114,6 +114,15 @@ function inletSource(data: NodeData): InletSource {
   };
 }
 
+/**
+ * Whether an existing wire into this handle stays. A shader's inlets follow its draft, which is
+ * half-typed text, so every iChannel slot keeps its wire; the node only dims an unread one.
+ */
+export function keepsWire(data: NodeData, handle: string): boolean {
+  if (data.kind === "shader") return /^ch[0-3]$/.test(handle);
+  return nodeInlets(data).includes(handle);
+}
+
 export function isValidConnection(connection: Edge | Connection): boolean {
   if (!connection.source || !connection.target) return false;
   if (connection.source === connection.target) return false;
@@ -209,9 +218,8 @@ export const useGraph = create<GraphState>((set, get) => ({
         };
         return { ...node, data };
       });
-      const open = new Set(parsed.channels.map((channel) => `ch${channel}`));
-      const edges = state.edges.filter((edge) => edge.target !== id || (edge.targetHandle != null && open.has(edge.targetHandle)));
-      return { nodes, edges };
+      // Wires stay: a draft is half-typed text and the last good program may still read the channel.
+      return { nodes };
     });
   },
   setParam: (id, name, value) =>

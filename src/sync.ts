@@ -18,7 +18,7 @@ import { decodeShaderParam, encodeShaderParam, parseShader } from "./engine/wrap
 import { identity } from "./room";
 import { wireStyle, type Family } from "./family";
 import { createOpData, type OpData, type Par } from "./ops/catalog";
-import { mergeParams, nodeInlets, nodeOutlet, useGraph, type GraphState, type NodeData, type PNode, type ShaderData } from "./store";
+import { keepsWire, mergeParams, nodeOutlet, useGraph, type GraphState, type NodeData, type PNode, type ShaderData } from "./store";
 
 const LOCAL = Symbol("local");
 
@@ -344,7 +344,7 @@ function pruneEdges(nodes: PNode[]): Edge[] {
       !target ||
       source.data.family !== target.data.family ||
       !nodeOutlet(source.data) ||
-      !nodeInlets(target.data).includes(rec.targetHandle) ||
+      !keepsWire(target.data, rec.targetHandle) ||
       taken.has(slot) ||
       reaches(rec.target, rec.source, kept);
     if (bad) {
