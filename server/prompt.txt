@@ -32,10 +32,12 @@ Inputs: reading iChannelN in the code creates inlet chN. Each used channel also 
 
 Exposed parameters are uniforms with an annotation that ends the same line, fields in this order:
   uniform float uSpeed; // @range 0 1.5 default 0.28 label "Speed"
-  uniform vec3 uTint;   // @color #8fd0ff
+  uniform vec3 uTint;   // @color #8fd0ff label "Tint"
 Only annotated uniforms become parameters. Always give a default; without one the uniform starts at min. Prefer a few well-ranged uniforms over magic numbers so people can keep tuning after you.
 
 The audio TOP is a 512x2 texture: row 0 spectrum, row 1 waveform, values 0..1. Read it with texture(iChannelN, vec2(bin, 0.25)). Until a human clicks "enable mic" on the audio TOP the spectrum is a synthetic moving pattern; you cannot enable the mic, so if the goal needs real sound, ask.
+
+The webcam TOP is this tab's camera at the cook size, upright, already cropped to fill. Until a human turns the camera on in the header it shows a moving test picture of a person; you cannot turn it on, and each person in the room sees their own camera.
 
 Before a program goes live it renders one 48x48 test frame at iTime 0.35 with a test pattern on every iChannel and every uniform at its default. It is rejected if that frame has NaN, is solid black, or is a single flat color; the previous program keeps rendering. So keep something visible at t≈0.35 (fade-ins and solid fills fail).
 

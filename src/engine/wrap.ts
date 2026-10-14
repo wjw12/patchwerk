@@ -193,7 +193,7 @@ export function parseShader(source: string): ParsedShader {
       });
       continue;
     }
-    const color = line.match(/^\s*uniform\s+vec3\s+(\w+)\s*;\s*\/\/\s*@color\s+#([0-9a-fA-F]{6})\s*$/);
+    const color = line.match(/^\s*uniform\s+vec3\s+(\w+)\s*;\s*\/\/\s*@color\s+#([0-9a-fA-F]{6})(?:\s+label\s+"([^"]*)")?\s*$/);
     if (color) {
       const name = color[1] ?? "";
       if (seen.has(name)) continue;
@@ -202,7 +202,7 @@ export function parseShader(source: string): ParsedShader {
       params.push({
         kind: "color",
         name,
-        label: name,
+        label: color[3] || name,
         value: [parseInt(hex.slice(0, 2), 16) / 255, parseInt(hex.slice(2, 4), 16) / 255, parseInt(hex.slice(4, 6), 16) / 255],
       });
     }

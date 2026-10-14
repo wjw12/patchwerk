@@ -54,6 +54,14 @@ export interface AudioData {
   bypass: boolean;
 }
 
+export interface WebcamData {
+  [key: string]: unknown;
+  kind: "webcam";
+  family: Family;
+  label: string;
+  bypass: boolean;
+}
+
 export interface OutData {
   [key: string]: unknown;
   kind: "out";
@@ -62,7 +70,7 @@ export interface OutData {
   bypass: boolean;
 }
 
-export type NodeData = ShaderData | AudioData | OutData | OpData;
+export type NodeData = ShaderData | AudioData | WebcamData | OutData | OpData;
 export type RfKind = "top" | "chop" | "pop" | "mat" | "comp";
 
 export interface AddOpOptions {
@@ -494,6 +502,9 @@ function makeNode(id: string, label: string, family: Family, type: string, posit
   }
   if (type === "audio" && family === "TOP") {
     return { id, type: "top", position, selected, data: { kind: "audio", family: "TOP", label, bypass: false } };
+  }
+  if (type === "webcam" && family === "TOP") {
+    return { id, type: "top", position, selected, data: { kind: "webcam", family: "TOP", label, bypass: false } };
   }
   if (type === "out" && family === "TOP") {
     return { id, type: "top", position, selected, data: { kind: "out", family: "TOP", label, bypass: false } };

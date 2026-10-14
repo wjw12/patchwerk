@@ -1,5 +1,20 @@
 // Hydra o3. iChannel0 is o1, iChannel1 is o5. Posterize, grain, pink dither pixels.
-// time is already speed-scaled (0.025).
+uniform vec3 uShadow; // @color #ccfc38 label "Shadow"
+uniform vec3 uMid; // @color #737373 label "Midtone"
+uniform vec3 uLight; // @color #dcdcdc label "Highlight"
+uniform vec3 uDots; // @color #ff4a80 label "Dots"
+uniform float uShadowLevel; // @range 0 0.6 default 0.11 label "Shadow level"
+uniform float uLightLevel; // @range 0.2 1 default 0.8 label "Highlight level"
+uniform float uSoft; // @range 0.001 0.3 default 0.04 label "Edge softness"
+uniform float uDotLevel; // @range 0 1 default 0.407 label "Dot threshold"
+uniform float uDotMix; // @range 0 1 default 1 label "Dot opacity"
+uniform float uDotSize; // @range 1 8 default 1 label "Dot size"
+uniform float uDotShift; // @range 0 1 default 0.9685 label "Dot shift"
+uniform float uZoom; // @range 0.5 2 default 1.02 label "Zoom"
+uniform float uWave; // @range 0 2 default 0.695 label "Wave warp"
+uniform float uWaveFreq; // @range 0 12 default 1.5 label "Wave frequency"
+uniform float uGrain; // @range 0 1 default 0.195 label "Grain"
+uniform float uBrightness; // @range -0.5 0.5 default -0.1 label "Brightness"
 
 vec4 permute(vec4 x) { return mod(((x * 34.0) + 1.0) * x, 289.0); }
 vec4 taylorInvSqrt(vec4 r) { return 1.79284291400159 - 0.85373472095314 * r; }
@@ -66,19 +81,15 @@ vec4 thresh(vec4 c, float threshold, float tolerance) {
 }
 
 vec4 colorize(vec4 o1) {
-  vec3 black = vec3(0.8015686274509806, 0.9882352941176471, 0.2196078431372548);
-  vec3 mid = vec3(0.45098039215686275);
-  vec3 white = vec3(0.8627450980392157);
-  vec4 lo = thresh(o1, 0.110297, 0.04);
-  vec4 band = thresh(o1, 0.1, 0.04) * (vec4(1.0) - thresh(o1, 0.8, 0.04));
-  vec4 hi = thresh(o1, 0.8, 0.04);
-  vec4 c = vec4(black, 1.0) * (vec4(1.0) - lo);
-  c += vec4(mid, 1.0) * band;
-  c += vec4(white, 1.0) * hi;
+  vec4 lo = thresh(o1, uShadowLevel, uSoft);
+  vec4 hi = thresh(o1, uLightLevel, uSoft);
+  vec4 band = thresh(o1, uShadowLevel - 0.01, uSoft) * (vec4(1.0) - hi);
+  vec4 c = vec4(uShadow, 1.0) * (vec4(1.0) - lo);
+  c += vec4(uMid, 1.0) * band;
+  c += vec4(uLight, 1.0) * hi;
   return c;
 }
 
-// lib-screen dither4, including the two cells that never pass.
 // lib-screen dither4, including the two cells that never pass (12+1/32 and 3).
 float bayer4(int x, int y) {
   if (x == 0 && y == 0) return 1.0 / 32.0;
@@ -99,15 +110,16 @@ float bayer4(int x, int y) {
   return 5.0 / 16.0 + 1.0 / 32.0;
 }
 
-vec4 greenPixels(vec2 screen, vec2 frag) {
-  vec3 pink = vec3(1.0, 0.29019607843137263, 0.5031372549019607);
+vec4 greenPixels(vec2 frag) {
+  vec2 cell = floor(frag / uDotSize);
+  vec2 screen = (cell * uDotSize + 0.5) / iResolution.xy;
   vec4 o5 = texture(iChannel1, fract(screen));
-  vec4 scrolled = texture(iChannel0, fract(screen + vec2(0.0, 4.9685)));
+  vec4 scrolled = texture(iChannel0, fract(screen + vec2(0.0, uDotShift)));
   vec4 delta = abs(o5 - scrolled);
-  float maskLuma = luma(thresh(delta, 0.406777, 0.4).rgb);
-  vec3 rgb = pink * maskLuma;
-  int x = int(mod(frag.x, 4.0));
-  int y = int(mod(frag.y, 4.0));
+  float maskLuma = luma(thresh(delta, uDotLevel, 0.4).rgb);
+  vec3 rgb = uDots * maskLuma;
+  int x = int(mod(cell.x, 4.0));
+  int y = int(mod(cell.y, 4.0));
   float b = bayer4(x, y);
   rgb = vec3(step(b, rgb.r), step(b, rgb.g), step(b, rgb.b));
   return vec4(rgb, maskLuma);
@@ -116,24 +128,24 @@ vec4 greenPixels(vec2 screen, vec2 frag) {
 void mainImage(out vec4 fragColor, in vec2 fragCoord) {
   vec2 screen = fragCoord / iResolution.xy;
   vec2 st = screen - vec2(0.5);
-  st *= 1.0 / vec2(1.02 * 1.02, 1.02);
+  st *= 1.0 / vec2(uZoom * uZoom, uZoom);
   st += vec2(0.5);
   // scale, then modulate by osc. The 0.002 noise modulate only moves the src sample.
-  vec2 warped = st + oscAt(st, 1.5, 0.348524).xy * 0.695;
+  vec2 warped = st + oscAt(st, uWaveFreq, 0.348524).xy * uWave;
   vec2 sampled = warped + noiseAt(warped, 926.0, 5.0).xy * 0.002;
 
   vec4 base = colorize(texture(iChannel0, fract(sampled)));
   base.rgb *= (oscAt(warped, 438000.0, 0.1) + vec4(0.600653, 0.6, 0.6, 1.0)).rgb;
   vec4 grain = noiseAt(warped, 524.0, 20.0);
   float grainA = smoothstep(0.4999999, 0.7000001, luma(grain.rgb));
-  base.rgb += grain.rgb * grainA * 0.194975;
-  base.rgb += vec3(-0.1);
-  vec4 high = thresh(texture(iChannel0, fract(screen)), 0.8, 0.15);
+  base.rgb += grain.rgb * grainA * uGrain;
+  base.rgb += vec3(uBrightness);
+  vec4 high = thresh(texture(iChannel0, fract(screen)), uLightLevel, 0.15);
   base.rgb *= 1.0 - high.rgb;
   vec4 poster = colorize(texture(iChannel0, fract(screen)));
   vec4 speckle = noiseAt(screen, 500.0, 20.0);
   float speckleA = smoothstep(0.4999999, 0.7000001, luma(speckle.rgb));
   base.rgb += poster.rgb + speckle.rgb * speckleA * high.rgb;
-  vec4 dots = greenPixels(screen, fragCoord);
-  fragColor = vec4(dots.rgb + base.rgb * (1.0 - dots.a), 1.0);
+  vec4 dots = greenPixels(fragCoord);
+  fragColor = vec4(dots.rgb * uDotMix + base.rgb * (1.0 - dots.a * uDotMix), 1.0);
 }

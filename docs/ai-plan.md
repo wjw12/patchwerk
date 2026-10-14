@@ -150,7 +150,7 @@ Checked against the code on 2026-10-14; cited so the specs can be re-verified.
 - Removing a node via `onNodesChange` leaves its edges in zustand (`store.ts:190`); `isValidConnection` then reports the inlet occupied.
 - `addOp` only auto-wires when the new node has an inlet; the shader `TEMPLATE` reads no `iChannel`, so a fresh shader TOP has none (`template.glsl`). Nothing splices a node into an existing wire.
 - The test frame: 48×48 at `iTime 0.35`, a test pattern on every `iChannel`, uniforms at their annotation default (min when there is none). Rejected on NaN, solid black (max luma < 4/255) or a single solid color (`engine.ts:1252-1310`, `wrap.ts:185`).
-- Annotations are one per line and must end the line: `uniform float x; // @range min max [default v] [label "…"]` in that order; `uniform vec3 c; // @color #rrggbb` with no label (`wrap.ts:177,196`). `// @feedback` and `// @prev iChannelN label` are full-line comments; those channels are not inlets (`wrap.ts:158-170`).
+- Annotations are one per line and must end the line: `uniform float x; // @range min max [default v] [label "…"]` in that order; `uniform vec3 c; // @color #rrggbb [label "…"]` (`wrap.ts:177,196`). `// @feedback` and `// @prev iChannelN label` are full-line comments; those channels are not inlets (`wrap.ts:158-170`).
 - `followRename` updates expressions and ref pars, not `// @prev` lines (`store.ts:381-410`).
 - `iCursors[i].xy` is 0..1 over the picture, y up; `iMouse` is in cook pixels (`engine.ts:1516-1534`).
 - The audio spectrum is synthetic until a human enables the mic with a click (`engine.ts:441-458, 1465-1473`); `audioband` reads it either way.

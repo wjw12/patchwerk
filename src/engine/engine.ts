@@ -14,7 +14,7 @@ import type { Launch } from "../session";
 import { useGraph } from "../store";
 import type { PNode } from "../store";
 import { FULLSCREEN_VS } from "./fullscreen";
-import { COPY_FS, PASSTHROUGH } from "./sources";
+import { COPY_FS, PASSTHROUGH, WEBCAM_FS } from "./sources";
 import { channelSampling, compilerErrors, parseShader, shaderNumberPar, wrapShader, type ParsedShader, type ShaderParam } from "./wrap";
 const GPU_TIMEOUT = "GPU timeout / context lost. Running the last good version; edit the shader to try again.";
 /** How long after a commit a context loss is still blamed on it. */
@@ -68,6 +68,11 @@ export class Engine {
   private audioTex: WebGLTexture | null = null;
   private audioPixels = new Uint8Array(512 * 2 * 4);
   private testTarget: twgl.FramebufferInfo | null = null;
+  private video: HTMLVideoElement | null = null;
+  private mirror = true;
+  private videoTex: WebGLTexture | null = null;
+  private webcam: twgl.ProgramInfo | null = null;
+  private webcamTarget: twgl.FramebufferInfo | null = null;
   private analyser: AnalyserNode | null = null;
   private freq = new Float32Array(512);
   private wave = new Float32Array(512);
@@ -587,6 +592,12 @@ export class Engine {
     this.analyser = analyser;
   }
 
+  /** What the webcam TOP shows (src/camera.ts owns the stream); null is the built-in test picture. */
+  setCamera(video: HTMLVideoElement | null, mirror: boolean): void {
+    this.video = video;
+    this.mirror = mirror;
+  }
+
   private boot(): void {
     this.booting = true;
     const unsub = useGraph.subscribe((state) => {
@@ -675,6 +686,7 @@ export class Engine {
     const { nodes, edges } = useGraph.getState();
     if (nodes !== this.prunedFor) this.prune(nodes);
     this.fillAudio();
+    this.fillWebcam(nodes);
     this.cookOps(nodes, edges);
     this.pointer.clicked = false;
     if (this.present) this.presentAll(nodes);
@@ -777,7 +789,7 @@ export class Engine {
     );
     for (const id of order) {
       const node = nodes.find((item) => item.id === id);
-      if (!node || node.data.kind === "audio") continue;
+      if (!node || node.data.kind === "audio" || node.data.kind === "webcam") continue;
       if (node.data.kind === "shader" || node.data.kind === "out") {
         this.cookShader(node, nodes, edges);
         continue;
@@ -1332,6 +1344,7 @@ export class Engine {
     const image = this.images.get(node.id);
     if (image) return image;
     if (node.data.kind === "audio" && this.audioTex) return { tex: this.audioTex, w: 512, h: 2 };
+    if (node.data.kind === "webcam" && this.webcamTarget) return { tex: this.webcamTarget.attachments[0] as WebGLTexture, w: COOK_W, h: COOK_H };
     const rt = this.runtime.get(node.id);
     if (!rt) return null;
     return { tex: rt.front.attachments[0] as WebGLTexture, w: rt.front.width, h: rt.front.height };
@@ -1587,6 +1600,14 @@ export class Engine {
       src: this.audioPixels,
     });
     this.testTarget = this.makeTarget(TEST_W, TEST_H);
+    const webcam = this.compile(WEBCAM_FS);
+    if ("error" in webcam) {
+      this.fail(webcam.error);
+      return;
+    }
+    this.webcam = webcam.info;
+    this.webcamTarget = this.makeTarget(COOK_W, COOK_H);
+    this.videoTex = twgl.createTexture(gl, { width: 1, height: 1, min: gl.LINEAR, mag: gl.LINEAR, wrap: gl.CLAMP_TO_EDGE, src: [0, 0, 0, 255] });
     this.pops = new PopBank(gl);
     this.imageOps = new ImageOps(gl);
     this.byteTarget = twgl.createFramebufferInfo(
@@ -1666,6 +1687,27 @@ export class Engine {
     gl.bindTexture(gl.TEXTURE_2D, this.audioTex);
     gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
     gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, 512, 2, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
+  }
+
+  private fillWebcam(nodes: PNode[]): void {
+    const gl = this.gl;
+    if (!gl || !this.webcam || !this.webcamTarget || !nodes.some((node) => node.data.kind === "webcam")) return;
+    const video = this.video;
+    const live = video !== null && video.readyState >= video.HAVE_CURRENT_DATA && video.videoWidth > 0;
+    if (live) {
+      gl.bindTexture(gl.TEXTURE_2D, this.videoTex);
+      gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, video);
+      gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+    }
+    this.draw(this.webcam, this.webcamTarget, {
+      uVideo: this.videoTex,
+      uLive: live ? 1 : 0,
+      uMirror: this.mirror ? 1 : 0,
+      uVideoSize: live ? [video.videoWidth, video.videoHeight] : [COOK_W, COOK_H],
+      uSize: [COOK_W, COOK_H],
+      uTime: this.time,
+    });
   }
 
   /**

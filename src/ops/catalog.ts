@@ -320,14 +320,14 @@ export function inletCount(family: Family, type: string): number {
 export function inletHandles(node: InletSource): string[] {
   if (node.kind === "shader") return (node.channels ?? []).map((channel) => `ch${channel}`);
   if (node.kind === "out") return ["ch0"];
-  if (node.kind === "audio") return [];
+  if (node.kind === "audio" || node.kind === "webcam") return [];
   if (node.kind !== "op" || !node.type) return [];
   const count = inletCount(node.family, node.type);
   return Array.from({ length: count }, (_, index) => `in${index}`);
 }
 
 export function hasOutlet(node: InletSource): boolean {
-  if (node.kind === "shader" || node.kind === "audio" || node.kind === "out") return true;
+  if (node.kind === "shader" || node.kind === "audio" || node.kind === "webcam" || node.kind === "out") return true;
   if (node.kind !== "op") return false;
   if (node.family === "MAT" || node.family === "COMP") return false;
   return true;
@@ -340,7 +340,7 @@ export interface PaletteEntry {
 
 export function paletteEntries(): PaletteEntry[] {
   const ops = OPS.map((spec) => ({ family: spec.family, type: spec.type }));
-  return [...ops, { family: "TOP", type: "shader" }, { family: "TOP", type: "audio" }, { family: "TOP", type: "out" }];
+  return [...ops, { family: "TOP", type: "shader" }, { family: "TOP", type: "audio" }, { family: "TOP", type: "webcam" }, { family: "TOP", type: "out" }];
 }
 
 export const DESCRIBE: Record<string, string> = {
@@ -401,6 +401,7 @@ export function catalogText(): string {
   lines.push(
     "TOP  shader       inlets chN for each iChannelN the code reads   params from @range/@color   one GLSL program",
     "TOP  audio        inputs 0   the microphone (or a synthetic pattern) as a 512x2 texture",
+    "TOP  webcam       inputs 0   this tab's camera (or a moving test picture) at the cook size, upright",
     "TOP  out          inlet ch0   the final picture",
   );
   return lines.join("\n");

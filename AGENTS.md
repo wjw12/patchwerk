@@ -28,7 +28,7 @@ Textures stay on the GPU. One hidden WebGL2 canvas cooks every TOP. Node preview
 
 `/r/<slug>` is a room. `/` is the landing page: templates and this browser's recent rooms. `/new?from=<template>` opens a fresh room seeded from a template (`blank`, `demo`, or any `tests/graphs` example); share that link when every visitor should get their own copy. One Y.Doc per room, flat maps keyed by node id so every slider, position and wire is its own last-writer-wins key. Shader code is a `Y.Text` that CodeMirror binds to, so two people can type in one shader. Selection, compile status and node size stay local. Cursors over the viewer go through awareness into `iCursors[1..7]`.
 
-Ctrl+Z undoes only your own graph edits. The room chip in the header is the room menu: copy link, new room, duplicate, export, and (demoted, with a confirm) replace this room's graph with a template or file. Template thumbnails are `public/thumbs/<name>.jpg`; regenerate with `bun run thumbs` (needs `bun run dev`) after adding or changing an example. Audio input (off, mic, or a looping file) is per tab and never shared.
+Ctrl+Z undoes only your own graph edits. The room chip in the header is the room menu: copy link, new room, duplicate, export, and (demoted, with a confirm) replace this room's graph with a template or file. Template thumbnails are `public/thumbs/<name>.jpg`; regenerate with `bun run thumbs` (needs `bun run dev`) after adding or changing an example. Audio input (off, mic, or a looping file) and the camera behind a webcam TOP are per tab and never shared.
 
 `?graph=` / `?t=` / `?frame=` (the visual-test session) never joins a room.
 
