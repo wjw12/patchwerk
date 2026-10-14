@@ -1,7 +1,7 @@
 // Renders every example in tests/graphs a few seconds in and saves the viewer as
 // public/thumbs/<name>.jpg for the template picker. Needs `bun run dev`.
 //   bun run thumbs            all examples
-//   bun run thumbs hydra      just one
+//   bun run thumbs frontiers2026      just one
 import { mkdirSync, readdirSync } from "node:fs";
 import path from "node:path";
 import { launchBrowser } from "./browser";

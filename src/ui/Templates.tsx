@@ -6,7 +6,8 @@ import { buildGraph, EXAMPLES, templateFile, type GraphFile } from "../graph-fil
 import { handOff, newSlug } from "../room";
 import { importFile, loadGraphFile } from "./graph-io";
 
-export const TEMPLATES: string[] = ["blank", ...EXAMPLES.map((example) => example.name)];
+// cloud is the demo a room boots into, so it is not offered again as a template.
+export const TEMPLATES: string[] = ["blank", ...EXAMPLES.map((example) => example.name).filter((name) => name !== "cloud")];
 
 /** Thumbnails come from `bun run thumbs`, rendered from each example at a few seconds in. */
 function Thumb({ name }: { name: string }) {

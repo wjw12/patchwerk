@@ -1,4 +1,4 @@
-// WebGL for the landing page: the hydra template cooking behind the hero, and single-pass
+// WebGL for the landing page: the frontiers2026 template cooking behind the hero, and single-pass
 // ShaderToy previews. Same wrapper as the engine, none of the graph machinery.
 import * as twgl from "twgl.js";
 import { FULLSCREEN_VS } from "../../engine/fullscreen";
@@ -196,7 +196,7 @@ export interface HeroOptions {
   onFrame?: (seconds: number, fps: number, cook: [number, number]) => void;
 }
 
-/** The hydra template (o1 → o5 → post) cooking full-bleed, graded into the page palette. */
+/** The frontiers2026 template (o1 → o5 → post) cooking full-bleed, graded into the page palette. */
 export function hydraHero(canvas: HTMLCanvasElement, options: HeroOptions): () => void {
   const gl = context(canvas);
   if (!gl) return () => {};

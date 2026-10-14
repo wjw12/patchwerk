@@ -192,7 +192,7 @@ function Hero() {
           <a className="lp-btn is-solid is-big" href="/new?from=demo">
             Start a room
           </a>
-          <a className="lp-btn is-big" href="/new?from=hydra">
+          <a className="lp-btn is-big" href="/new?from=frontiers2026">
             Open this patch
           </a>
         </div>
@@ -200,7 +200,7 @@ function Hero() {
 
       <div className="lp-hud">
         <i className="dot is-live" />
-        <b>live</b> <em>hydra template · o1 → o5 → post · </em>
+        <b>live</b> <em>frontiers2026 template · o1 → o5 → post · </em>
         <span ref={hud}>booting</span>
       </div>
     </header>

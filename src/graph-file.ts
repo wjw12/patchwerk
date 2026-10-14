@@ -151,7 +151,7 @@ const FIXTURES = new Set(["feedback-precision", "template"]);
 export const EXAMPLES: { name: string; load: () => Promise<GraphFile> }[] = Object.entries(examples)
   .map(([path, load]) => ({ name: path.slice(path.lastIndexOf("/") + 1, -".json".length), load }))
   .filter((example) => !FIXTURES.has(example.name))
-  .sort((a, b) => (a.name === "cloud" ? -1 : b.name === "cloud" ? 1 : a.name.localeCompare(b.name)));
+  .sort((a, b) => a.name.localeCompare(b.name));
 
 /** A room with nothing but the final picture. */
 export const BLANK: GraphFile = { viewer: "out", nodes: [{ id: "out", kind: "out", label: "out", x: 480, y: 200 }], edges: [] };

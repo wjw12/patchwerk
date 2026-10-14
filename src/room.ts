@@ -15,7 +15,7 @@ export function newRoomPath(from?: string): string {
   return `/r/${newSlug()}${from ? `?from=${encodeURIComponent(from)}` : ""}`;
 }
 
-/** `/new` and `/new?from=hydra`: a fresh room every time, so a shared link never overwrites one. */
+/** `/new` and `/new?from=frontiers2026`: a fresh room every time, so a shared link never overwrites one. */
 export function isNewRoomPath(): boolean {
   return /^\/new\/?$/.test(location.pathname);
 }
