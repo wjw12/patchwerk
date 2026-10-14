@@ -990,7 +990,11 @@ export class Engine {
       iResolution: [COOK_W, COOK_H, 1],
       iTime: this.time,
       iTimeDelta: this.dt,
-      iFrame: this.frame,
+      iFrame: this.frame - 1,
+      iFrameRate: 1 / Math.max(this.dt, 1e-4),
+      iDate: this.date(),
+      iSampleRate: this.analyser?.context.sampleRate ?? 44100,
+      iChannelTime: [this.time, this.time, this.time, this.time],
       iMouse: [
         this.pointer.x * COOK_W,
         this.pointer.y * COOK_H,
@@ -1032,6 +1036,14 @@ export class Engine {
       values[param.name] = param.kind === "float" ? param.value : param.value;
     }
     return values;
+  }
+
+  /** ShaderToy iDate: year, month (0-based), day, seconds since midnight. A fixed cook pins it to 2024-01-01 10:00 + t. */
+  private date(): number[] {
+    if (this.launch.fixed) return [2024, 0, 1, 36000 + this.time];
+    const now = new Date();
+    const seconds = now.getHours() * 3600 + now.getMinutes() * 60 + now.getSeconds() + now.getMilliseconds() / 1000;
+    return [now.getFullYear(), now.getMonth(), now.getDate(), seconds];
   }
 
   private outputTexture(node: PNode): { tex: WebGLTexture; w: number; h: number } | null {
@@ -1119,6 +1131,10 @@ export class Engine {
       iTime: 0.35,
       iTimeDelta: 0.016,
       iFrame: 3,
+      iFrameRate: 60,
+      iDate: [2024, 0, 1, 36000.35],
+      iSampleRate: 44100,
+      iChannelTime: [0.35, 0.35, 0.35, 0.35],
       iMouse: [TEST_W * 0.5, TEST_H * 0.4, TEST_W * 0.5, TEST_H * 0.4],
       iCursorCount: 1,
       iCursors: cursorArray([{ x: 0.45, y: 0.55, down: true }]),
