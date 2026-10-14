@@ -14,7 +14,7 @@ import { useGraph } from "../store";
 import type { PNode } from "../store";
 import { FULLSCREEN_VS } from "./fullscreen";
 import { COPY_FS, PASSTHROUGH } from "./sources";
-import { compilerErrors, parseShader, shaderNumberPar, wrapShader, type ShaderParam } from "./wrap";
+import { compilerErrors, parseShader, shaderNumberPar, wrapShader, type ParsedShader, type ShaderParam } from "./wrap";
 const GPU_TIMEOUT = "GPU timeout / context lost. Running the last good version; edit the shader to try again.";
 /** How long after a commit a context loss is still blamed on it. */
 const SUSPECT_MS = 10_000;
@@ -34,6 +34,8 @@ interface Runtime {
   info: twgl.ProgramInfo;
   front: twgl.FramebufferInfo;
   back: twgl.FramebufferInfo | null;
+  /** The cook serial this runtime last drew in. Before it draws this frame, front is last frame. */
+  cooked: number;
 }
 
 export class Engine {
@@ -92,6 +94,10 @@ export class Engine {
   private settleCook = false;
   private settledSeen: { edges: unknown; data: Map<string, unknown> } = { edges: null, data: new Map() };
   private floatLinear = false;
+  /** Bumped once per cook; see Runtime.cooked. */
+  private cookSerial = 0;
+  private prevWanted = new Set<string>();
+  private parsed = new Map<string, ParsedShader>();
   /** The newest commit, until it has run long enough to be trusted. */
   private suspect: { id: string; source: string; good: string | null; at: number } | null = null;
   /** Hashes of shader sources that lost the context. Survives restore and stop(). */
@@ -617,6 +623,8 @@ export class Engine {
     this.chopDone = new Set();
     this.advanced = this.time !== this.cookedAt;
     this.cookedAt = this.time;
+    this.cookSerial += 1;
+    this.prevWanted = this.prevTargets(nodes);
     const order = cookOrder(
       nodes.map((node) => node.id),
       (id) => nodes.find((node) => node.id === id)?.data.family ?? "TOP",
@@ -653,7 +661,7 @@ export class Engine {
     const bypass = node.data.kind === "shader" && node.data.bypass;
     const source = node.data.kind === "out" || bypass ? PASSTHROUGH : node.data.kind === "shader" ? node.data.committed : null;
     if (!source || this.poisoned.has(hash(source))) return;
-    const parsed = parseShader(source);
+    const parsed = this.parseCached(source);
     const wrapped = wrapShader(source);
     let info = this.programs.get(hash(wrapped.source));
     if (!info) {
@@ -663,14 +671,50 @@ export class Engine {
       this.programs.set(hash(wrapped.source), info);
     }
     const feedback = node.data.kind === "shader" && !bypass && parsed.feedback;
-    const rt = this.install(node.id, source, info, feedback);
+    const prev = node.data.kind === "shader" && !bypass ? parsed.prev : [];
+    const rt = this.install(node.id, source, info, feedback || this.prevWanted.has(node.id));
     const target = rt.back ?? rt.front;
     const previous = rt.front;
-    this.draw(info, target, this.uniformsFor(node, parsed.params, feedback, previous, edges, nodes));
+    this.draw(info, target, this.uniformsFor(node, parsed.params, feedback, previous, edges, nodes, prev));
     if (rt.back) {
       rt.front = rt.back;
       rt.back = previous;
     }
+    rt.cooked = this.cookSerial;
+  }
+
+  private parseCached(source: string): ParsedShader {
+    let parsed = this.parsed.get(source);
+    if (!parsed) {
+      if (this.parsed.size > 64) this.parsed.clear();
+      parsed = parseShader(source);
+      this.parsed.set(source, parsed);
+    }
+    return parsed;
+  }
+
+  /** Shader TOPs some `// @prev` reads. They keep last frame in a second buffer. */
+  private prevTargets(nodes: PNode[]): Set<string> {
+    const wanted = new Set<string>();
+    for (const node of nodes) {
+      if (node.data.kind !== "shader" || node.data.bypass || !node.data.committed) continue;
+      for (const item of this.parseCached(node.data.committed).prev) {
+        const id = item.label === "self" ? node.id : this.byLabel(nodes, item.label)?.id;
+        if (id) wanted.add(id);
+      }
+    }
+    return wanted;
+  }
+
+  /** What `@prev` binds: the named TOP's frame from before this cook. */
+  private previousFrame(self: PNode, label: string, nodes: PNode[]): { tex: WebGLTexture; w: number; h: number } | null {
+    const node = label === "self" ? self : this.byLabel(nodes, label);
+    if (!node) return null;
+    const rt = this.runtime.get(node.id);
+    // Not a shader TOP (render, bloom, audio): there is no second buffer, so it reads the current image.
+    if (!rt) return this.outputTexture(node);
+    const last = rt.back && rt.cooked === this.cookSerial ? rt.back : rt.front;
+    return { tex: last.attachments[0] as WebGLTexture, w: last.width, h: last.height };
   }
 
   private cookChopNode(
@@ -1014,6 +1058,7 @@ export class Engine {
     previous: twgl.FramebufferInfo,
     edges: { source: string; target: string; targetHandle?: string | null }[],
     nodes: PNode[],
+    prev: ParsedShader["prev"] = [],
   ): Record<string, unknown> {
     const values: Record<string, unknown> = {
       iResolution: [COOK_W, COOK_H, 1],
@@ -1033,10 +1078,18 @@ export class Engine {
       let tex = this.black;
       let w = 1;
       let h = 1;
+      const before = prev.find((item) => item.channel === channel);
       if (feedback && channel === 3) {
         tex = previous.attachments[0] as WebGLTexture;
         w = COOK_W;
         h = COOK_H;
+      } else if (before) {
+        const last = this.previousFrame(node, before.label, nodes);
+        if (last) {
+          tex = last.tex;
+          w = last.w;
+          h = last.h;
+        }
       } else {
         const edge = edges.find((item) => item.target === node.id && item.targetHandle === `ch${channel}`);
         if (edge) {
@@ -1219,6 +1272,7 @@ export class Engine {
     return { info };
   }
 
+  /** `feedback` here means double-buffered: @feedback itself, or read by someone's @prev. */
   private install(id: string, source: string, info: twgl.ProgramInfo, feedback: boolean): Runtime {
     const existing = this.runtime.get(id);
     if (existing) {
@@ -1240,6 +1294,7 @@ export class Engine {
       info,
       front: this.makeTarget(COOK_W, COOK_H, feedback),
       back: feedback ? this.makeTarget(COOK_W, COOK_H, true) : null,
+      cooked: 0,
     };
     this.runtime.set(id, created);
     return created;

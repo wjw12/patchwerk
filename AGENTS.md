@@ -11,7 +11,7 @@ Operators belong to a family. A wire only connects two operators of the same fam
 - **COMP** — cameras and, later, nested networks.
 - **DAT** — text and tables.
 
-Cooking walks the wires. A node runs when an input, a parameter, or time changed. Cycles are rejected. `// @feedback` is the one legal loop: that node's previous frame comes back on `iChannel3`.
+Cooking walks the wires. A node runs when an input, a parameter, or time changed. Cycles are rejected. The legal loops read last frame: `// @feedback` brings a node's own previous frame back on `iChannel3`, and `// @prev iChannel1 bufB` binds another shader TOP's (or `self`'s) previous frame, so ShaderToy buffers can read each other.
 
 Textures stay on the GPU. One hidden WebGL2 canvas cooks every TOP. Node previews and the viewer are plain 2D canvases that copy that canvas in the same frame.
 

@@ -1,0 +1,14 @@
+{
+  "viewer": "out",
+  "nodes": [
+    { "id": "bufA", "kind": "shader", "label": "bufA", "shader": "pingpong-a.glsl", "x": 40, "y": 80 },
+    { "id": "bufB", "kind": "shader", "label": "bufB", "shader": "pingpong-b.glsl", "x": 340, "y": 80 },
+    { "id": "show", "kind": "shader", "label": "show", "shader": "pingpong-show.glsl", "x": 640, "y": 80 },
+    { "id": "out", "kind": "out", "label": "out", "x": 940, "y": 80 }
+  ],
+  "edges": [
+    { "source": "bufA", "target": "bufB", "targetHandle": "ch0" },
+    { "source": "bufB", "target": "show", "targetHandle": "ch0" },
+    { "source": "show", "target": "out", "targetHandle": "ch0" }
+  ]
+}

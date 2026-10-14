@@ -75,6 +75,11 @@ export function decodeShaderParam(param: ShaderParam, raw: unknown): ShaderParam
 export interface ParsedShader {
   channels: number[];
   feedback: boolean;
+  /**
+   * `// @prev iChannel1 bufB`: iChannel1 is the TOP labelled bufB as it was last frame (`self` is
+   * this node). Not a wire, so it may close a loop: ShaderToy buffers reading each other.
+   */
+  prev: { channel: number; label: string }[];
   params: ShaderParam[];
 }
 
@@ -127,6 +132,13 @@ export function parseShader(source: string): ParsedShader {
     channels.add(Number(match[1]));
   }
   if (feedback) channels.delete(3);
+  const prev: ParsedShader["prev"] = [];
+  for (const match of source.matchAll(/^[ \t]*\/\/[ \t]*@prev[ \t]+iChannel([0-3])[ \t]+(\S+)[ \t]*$/gm)) {
+    const channel = Number(match[1]);
+    if ((feedback && channel === 3) || prev.some((item) => item.channel === channel)) continue;
+    prev.push({ channel, label: match[2] ?? "self" });
+    channels.delete(channel);
+  }
 
   const params: ShaderParam[] = [];
   const seen = new Set<string>();
@@ -169,6 +181,7 @@ export function parseShader(source: string): ParsedShader {
   return {
     channels: [...channels].sort(),
     feedback,
+    prev,
     params,
   };
 }
