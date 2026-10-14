@@ -1,0 +1,8 @@
+{
+  "viewer": "out",
+  "nodes": [
+    { "id": "clouds", "kind": "shader", "label": "clouds", "shader": "clouds.glsl", "x": 40, "y": 80 },
+    { "id": "out", "kind": "out", "label": "out", "x": 360, "y": 80 }
+  ],
+  "edges": [{ "source": "clouds", "target": "out", "targetHandle": "ch0" }]
+}
