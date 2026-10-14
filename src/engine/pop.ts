@@ -82,6 +82,13 @@ export class PopBank {
     this.outs.delete(id);
   }
 
+  /** Frees every POP whose id is not in `alive`. */
+  prune(alive: Set<string>): void {
+    for (const id of new Set([...this.owned.keys(), ...this.outs.keys()])) {
+      if (!alive.has(id)) this.forget(id);
+    }
+  }
+
   cook(id: string, job: PopJob): string | null {
     if (job.bypass) {
       if (job.input0) this.outs.set(id, job.input0);

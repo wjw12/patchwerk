@@ -38,7 +38,8 @@ export class ImageOps {
   private tri: twgl.BufferInfo;
   private nodes = new Map<string, twgl.FramebufferInfo>();
   private pyramid: { bright: Level; mid: Level; far: Level; blur: Level } | null = null;
-  private scratch: twgl.FramebufferInfo | null = null;
+  /** One scratch target per use, so thumbs and the viewer do not reallocate each other every frame. */
+  private scratch = new Map<"thumb" | "viewer", twgl.FramebufferInfo>();
 
   constructor(private gl: WebGL2RenderingContext) {
     this.points = new PointMat(gl);
@@ -50,7 +51,16 @@ export class ImageOps {
   }
 
   forget(id: string): void {
+    const target = this.nodes.get(id);
+    if (target) freeTarget(this.gl, target);
     this.nodes.delete(id);
+  }
+
+  /** Frees every node target whose id is not in `alive`. */
+  prune(alive: Set<string>): void {
+    for (const id of [...this.nodes.keys()]) {
+      if (!alive.has(id)) this.forget(id);
+    }
   }
 
   image(id: string): { tex: WebGLTexture; w: number; h: number } | null {
@@ -78,18 +88,21 @@ export class ImageOps {
   }
 
   /** Same point MAT into a small float target. Used for the node thumb and the orbit viewer. */
-  preview(cloud: CloudDraw | null, w: number, h: number): WebGLTexture {
+  preview(slot: "thumb" | "viewer", cloud: CloudDraw | null, w: number, h: number): WebGLTexture {
     const width = Math.max(2, w);
     const height = Math.max(2, h);
-    if (!this.scratch || this.scratch.width !== width || this.scratch.height !== height) {
-      this.scratch = this.allocate(width, height);
+    let target = this.scratch.get(slot);
+    if (!target || target.width !== width || target.height !== height) {
+      if (target) freeTarget(this.gl, target);
+      target = this.allocate(width, height);
+      this.scratch.set(slot, target);
     }
     if (!cloud || cloud.n < 1) {
-      this.clear(this.scratch);
-      return this.scratch.attachments[0] as WebGLTexture;
+      this.clear(target);
+      return target.attachments[0] as WebGLTexture;
     }
-    this.points.draw({ ...cloud, color: [1, 1, 1], target: this.scratch, width, height });
-    return this.scratch.attachments[0] as WebGLTexture;
+    this.points.draw({ ...cloud, color: [1, 1, 1], target, width, height });
+    return target.attachments[0] as WebGLTexture;
   }
 
   bloomPass(id: string, source: WebGLTexture, sourceW: number, sourceH: number, pars: BloomPars): { tex: WebGLTexture; w: number; h: number } {
@@ -163,6 +176,7 @@ export class ImageOps {
   private nodeTarget(id: string, w: number, h: number): twgl.FramebufferInfo {
     const existing = this.nodes.get(id);
     if (existing && existing.width === w && existing.height === h) return existing;
+    if (existing) freeTarget(this.gl, existing);
     const created = this.allocate(w, h);
     this.nodes.set(id, created);
     return created;
@@ -181,6 +195,7 @@ export class ImageOps {
     let target = twgl.createFramebufferInfo(gl, [attach], w, h);
     twgl.bindFramebufferInfo(gl, target);
     if (gl.checkFramebufferStatus(gl.FRAMEBUFFER) !== gl.FRAMEBUFFER_COMPLETE) {
+      freeTarget(gl, target);
       target = twgl.createFramebufferInfo(gl, [{ ...attach, min: gl.NEAREST, mag: gl.NEAREST }], w, h);
       twgl.bindFramebufferInfo(gl, target);
       if (gl.checkFramebufferStatus(gl.FRAMEBUFFER) !== gl.FRAMEBUFFER_COMPLETE) {
@@ -240,5 +255,14 @@ export class ImageOps {
     });
     if (!info) throw new Error(message || "image shader failed to compile");
     return info;
+  }
+}
+
+/** Deletes a twgl framebuffer and the textures or renderbuffers attached to it. */
+export function freeTarget(gl: WebGL2RenderingContext, target: twgl.FramebufferInfo): void {
+  gl.deleteFramebuffer(target.framebuffer);
+  for (const attachment of target.attachments) {
+    if (attachment instanceof WebGLTexture) gl.deleteTexture(attachment);
+    else if (attachment instanceof WebGLRenderbuffer) gl.deleteRenderbuffer(attachment);
   }
 }

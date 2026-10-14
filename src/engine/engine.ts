@@ -5,7 +5,8 @@ import { cookOrder } from "./cook";
 import { ExprError, type ExprEnv } from "./expr";
 import { camera, orbitCamera } from "./math";
 import { PopBank, type PopOut } from "./pop";
-import { COOK_H, COOK_W, ImageOps } from "./render";
+import { COOK_H, COOK_W, freeTarget, ImageOps } from "./render";
+import { clearLive } from "./live";
 import { resolvePars, type Resolved } from "./resolve";
 import { encodeBytes, publish } from "../probe";
 import type { Launch } from "../session";
@@ -438,6 +439,7 @@ export class Engine {
     this.programs.set(hash(wrapped.source), compiled.info);
     this.install(id, node.data.draft, compiled.info, parsed.feedback);
     useGraph.getState().applyCompile(id, { status: "live", error: null, committed: node.data.draft });
+    this.sweepPrograms(useGraph.getState().nodes);
   }
 
   private cook(): void {
@@ -445,15 +447,7 @@ export class Engine {
     const canvas = gl?.canvas as HTMLCanvasElement | undefined;
     if (!gl || gl.isContextLost() || !canvas || !this.tri || !this.copy || !this.black) return;
     const { nodes, edges } = useGraph.getState();
-    for (const id of this.runtime.keys()) {
-      if (!nodes.some((node) => node.id === id)) this.runtime.delete(id);
-    }
-    for (const id of [...this.images.keys()]) {
-      if (!nodes.some((node) => node.id === id)) {
-        this.images.delete(id);
-        this.imageOps?.forget(id);
-      }
-    }
+    if (nodes !== this.prunedFor) this.prune(nodes);
     const selected = nodes.find((node) => node.selected) ?? nodes.find((node) => node.id === "out");
     this.fillAudio();
     this.cookOps(nodes, edges);
@@ -468,6 +462,62 @@ export class Engine {
       const fresh = useGraph.getState().nodes;
       const live = fresh.filter((node) => (node.data.kind !== "shader" && node.data.kind !== "op") || node.data.status === "live").length;
       hud.textContent = this.failed || `${live}/${fresh.length} live · ${COOK_W}×${COOK_H} · ${this.frame}`;
+    }
+  }
+
+  private prunedFor: PNode[] | null = null;
+
+  /** Deleted nodes give back their GPU targets, programs and per-node maps. */
+  private prune(nodes: PNode[]): void {
+    this.prunedFor = nodes;
+    const alive = new Set(nodes.map((node) => node.id));
+    let dropped = false;
+    for (const [id, rt] of [...this.runtime]) {
+      if (alive.has(id)) continue;
+      this.freeRuntime(rt);
+      this.runtime.delete(id);
+      dropped = true;
+    }
+    for (const id of [...this.images.keys()]) {
+      if (!alive.has(id)) this.images.delete(id);
+    }
+    this.imageOps?.prune(alive);
+    this.pops?.prune(new Set([...alive, "__unit__"]));
+    for (const map of [this.chopNow, this.chopPrev, this.chopHist, this.resolved, this.drafts]) {
+      for (const id of [...map.keys()]) {
+        if (alive.has(id)) continue;
+        map.delete(id);
+        clearLive(id);
+      }
+    }
+    for (const [id, timer] of [...this.timers]) {
+      if (alive.has(id)) continue;
+      window.clearTimeout(timer);
+      this.timers.delete(id);
+    }
+    if (dropped) this.sweepPrograms(nodes);
+  }
+
+  private freeRuntime(rt: Runtime): void {
+    const gl = this.gl;
+    if (!gl) return;
+    freeTarget(gl, rt.front);
+    if (rt.back) freeTarget(gl, rt.back);
+  }
+
+  /** Deletes compiled programs that no runtime and no committed shader still uses. */
+  private sweepPrograms(nodes: PNode[]): void {
+    const gl = this.gl;
+    if (!gl) return;
+    const keep = new Set<string>([hash(wrapShader(PASSTHROUGH).source)]);
+    for (const node of nodes) {
+      if (node.data.kind === "shader" && node.data.committed) keep.add(hash(wrapShader(node.data.committed).source));
+    }
+    const used = new Set([...this.runtime.values()].map((rt) => rt.info.program));
+    for (const [key, info] of [...this.programs]) {
+      if (keep.has(key) || used.has(info.program)) continue;
+      gl.deleteProgram(info.program);
+      this.programs.delete(key);
     }
   }
 
@@ -700,6 +750,7 @@ export class Engine {
       if ((this.frame & 1) !== 0 && !node.selected && !this.launch.fixed) continue;
       const mats = orbitCamera(0.6, 0.35, 5, 45, 16 / 9);
       const tex = this.imageOps.preview(
+        "thumb",
         { p: position, n: pop.n, ...mats, scale: this.cloudLook.scale, focus: this.cloudLook.focus, alpha: this.cloudLook.alpha },
         160,
         90,
@@ -760,6 +811,7 @@ export class Engine {
     }
     const mats = orbitCamera(this.orbit.yaw, this.orbit.pitch, this.orbit.dist, 45, size.w / Math.max(size.h, 1));
     const tex = this.imageOps.preview(
+      "viewer",
       { p: position, n: pop.n, ...mats, scale: this.cloudLook.scale, focus: this.cloudLook.focus, alpha: this.cloudLook.alpha },
       size.w,
       size.h,
@@ -1056,7 +1108,10 @@ export class Engine {
       existing.source = source;
       existing.info = info;
       if (feedback && !existing.back) existing.back = this.makeTarget(COOK_W, COOK_H);
-      if (!feedback) existing.back = null;
+      if (!feedback && existing.back && this.gl) {
+        freeTarget(this.gl, existing.back);
+        existing.back = null;
+      }
       return existing;
     }
     const created: Runtime = {
@@ -1144,6 +1199,7 @@ export class Engine {
     const fbi = twgl.createFramebufferInfo(gl, [attach], w, h);
     twgl.bindFramebufferInfo(gl, fbi);
     if (gl.checkFramebufferStatus(gl.FRAMEBUFFER) !== gl.FRAMEBUFFER_COMPLETE) {
+      freeTarget(gl, fbi);
       const nearest = twgl.createFramebufferInfo(gl, [{ ...attach, min: gl.NEAREST, mag: gl.NEAREST }], w, h);
       this.clearTarget(nearest);
       if (gl.checkFramebufferStatus(gl.FRAMEBUFFER) !== gl.FRAMEBUFFER_COMPLETE) {
