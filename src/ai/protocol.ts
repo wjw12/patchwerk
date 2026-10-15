@@ -18,5 +18,7 @@ export type ServerFrame =
   | { type: "ready"; model: string }
   | { type: "tool_call"; id: string; name: ToolName; input: Record<string, unknown> }
   | { type: "text"; text: string }
+  /** Status the person should see but that does not end the turn, e.g. an API retry. */
+  | { type: "notice"; message: string }
   | { type: "done"; cost: number; turns: number; isError?: boolean; message?: string }
   | { type: "error"; message: string };

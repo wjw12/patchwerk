@@ -20,15 +20,17 @@ export function Editor({ height, onResize }: { height: number; onResize: (height
   const open = useGraph((state) => state.editorOpen);
   const setOpen = useGraph((state) => state.setEditorOpen);
   const node = useGraph((state) => state.nodes.find((item) => item.selected));
-  const synced = useSync((state) => state.synced);
+  const bound = useSync((state) => state.mode !== "waiting");
+  // Read so the editor rebinds when the graph moves from a scratch doc to the room's.
+  useSync((state) => state.epoch);
   const peers = useSync((state) => state.peers);
   const shader = node?.data.kind === "shader" ? node.data : null;
   const errorRef = useRef<string | null>(null);
   errorRef.current = shader?.error ?? null;
   const [view, setView] = useState<EditorView | null>(null);
-  // The text lives in the room; until the first sync there is nothing to bind to.
-  // A fixed session has no room and edits a local text instead.
-  const text = node && shader ? (fixed ? getLocalCode(node.id, shader.draft) : synced ? getCode(node.id) : null) : null;
+  // The text lives in the room doc (or the offline scratch doc); until one is chosen there is
+  // nothing to bind to. A fixed session has no room and edits a local text instead.
+  const text = node && shader ? (fixed ? getLocalCode(node.id, shader.draft) : bound ? getCode(node.id) : null) : null;
   const others = node ? peers.filter((peer) => peer.editing === node.id) : [];
 
   useEffect(() => {

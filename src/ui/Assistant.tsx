@@ -68,12 +68,19 @@ function Panel({ draft, setDraft, onCollapse }: { draft: string; setDraft: (text
   const transcript = useAssistant((state) => state.transcript);
   const cost = useAssistant((state) => state.cost);
   const model = useAssistant((state) => state.model);
-  const synced = useSync((state) => state.synced);
+  const roomStatus = useSync((state) => state.status);
+  const mode = useSync((state) => state.mode);
   const [fixed] = useState(() => readSession().fixed);
   const log = useRef<HTMLDivElement>(null);
   const stick = useRef(true);
   const busy = status === "connecting" || status === "running";
-  const reason = fixed ? "off in a fixed ?graph= session" : synced ? null : "waiting for the room to sync";
+  const reason = fixed
+    ? "off in a fixed ?graph= session"
+    : roomStatus !== "connected" && mode !== "waiting"
+      ? "off while the room server is unreachable: the assistant runs there. Your patch keeps working."
+      : mode === "waiting"
+        ? "waiting for the room to sync"
+        : null;
 
   useLayoutEffect(() => {
     const box = log.current;
@@ -174,6 +181,8 @@ function Item({ entry }: { entry: Entry }) {
           {entry.isError ? entry.message || "stopped" : `done · ${entry.turns} ${entry.turns === 1 ? "turn" : "turns"} · $${entry.cost.toFixed(2)}`}
         </p>
       );
+    case "notice":
+      return <p className="say-notice">{entry.message}</p>;
     case "error":
       return <p className="say-error">{entry.message}</p>;
   }

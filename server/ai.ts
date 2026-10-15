@@ -2,7 +2,16 @@ import { rmSync } from "node:fs";
 import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createSdkMcpServer, query, tool, type Query, type SDKMessage, type SDKResultError, type SDKUserMessage } from "@anthropic-ai/claude-agent-sdk";
+import {
+  createSdkMcpServer,
+  query,
+  tool,
+  type Query,
+  type SDKAssistantMessageError,
+  type SDKMessage,
+  type SDKResultError,
+  type SDKUserMessage,
+} from "@anthropic-ai/claude-agent-sdk";
 import { z } from "zod";
 import { catalogText } from "../src/ops/catalog";
 import type { ClientFrame, Content, ServerFrame, ToolName } from "../src/ai/protocol";
@@ -14,6 +23,45 @@ const MAX_SESSIONS = 4;
 const RPC_TIMEOUT_MS = 20_000;
 const TOOL_TIMEOUT_MS = 120_000;
 const MAX_TURNS = 60;
+
+/** Account problems: every later request fails the same way, so the session ends. */
+const FATAL = new Set<SDKAssistantMessageError>([
+  "authentication_failed",
+  "oauth_org_not_allowed",
+  "account_on_hold",
+  "verification_required",
+  "billing_error",
+  "model_not_found",
+  "cloud_credential_error",
+]);
+
+/** What a person in the room should read when the API refuses, instead of the CLI's own wording. */
+export function explainApiError(error: SDKAssistantMessageError, detail = ""): string {
+  const after = "Your patch is fine; keep editing by hand.";
+  switch (error) {
+    case "billing_error":
+      return `The assistant is out of API credits, so Claude can't answer right now. Whoever runs this server needs to add credits to its Anthropic account. ${after}`;
+    case "authentication_failed":
+    case "cloud_credential_error":
+      return `The assistant's API key was rejected. Whoever runs this server needs to fix ANTHROPIC_API_KEY in server/.env. ${after}`;
+    case "account_on_hold":
+    case "oauth_org_not_allowed":
+    case "verification_required":
+      return `The Anthropic account behind the assistant can't be used right now (${error.replaceAll("_", " ")}). ${after}`;
+    case "model_not_found":
+      return `The assistant's model (${MODEL}) isn't available to this server's API key. Set AI_MODEL in server/.env. ${after}`;
+    case "rate_limit":
+      return "The assistant hit its API rate limit. Wait a minute and send again.";
+    case "overloaded":
+      return "Claude is overloaded right now. Send again in a minute.";
+    case "server_error":
+      return "The Anthropic API had an error. Send again in a minute.";
+    case "max_output_tokens":
+      return "Claude's reply ran past its length limit. Send a follow-up to continue.";
+    default:
+      return detail || "The assistant's request to the Anthropic API failed.";
+  }
+}
 
 const SYSTEM = (await Bun.file(new URL("./prompt.txt", import.meta.url)).text()).replace("{{catalog}}", catalogText());
 
@@ -185,6 +233,8 @@ export class Session {
   private closed = false;
   private announced = false;
   private stopping = false;
+  /** The API error behind the last synthetic assistant message, until the turn's result. */
+  private apiError?: { error: SDKAssistantMessageError; detail: string };
 
   constructor(
     private readonly peer: Peer,
@@ -238,6 +288,9 @@ export class Session {
     if (typeof room !== "string" || !room) return this.fail("start needs a room");
     if (rooms.has(room)) return this.fail("claude is already working in this room");
     if (live.size >= MAX_SESSIONS) return this.fail(`claude is already working in ${MAX_SESSIONS} rooms; try again later`);
+    if (!process.env.ANTHROPIC_API_KEY && !process.env.CLAUDE_CODE_OAUTH_TOKEN) {
+      return this.fail("The assistant isn't set up on this server: ANTHROPIC_API_KEY is missing from server/.env. Your patch is fine; keep editing by hand.");
+    }
     this.room = room;
     rooms.set(room, this);
     live.add(this);
@@ -246,10 +299,16 @@ export class Session {
       if (this.closed) return;
       this.agent = startAgent(this.inbox, (name, input) => this.rpc(name, input), this.abort, this.cwd);
       this.inbox.push(`Goal: ${goal}\n\nRoom now:\n${graph}`);
-      for await (const message of this.agent) this.forward(message);
-      if (!this.closed) this.fail("the agent session ended");
+      for await (const message of this.agent) {
+        this.forward(message);
+        if (this.closed) break;
+      }
+      if (!this.closed) this.fail(this.apiError ? explainApiError(this.apiError.error, this.apiError.detail) : "the assistant's session ended; send again to start a new one");
     } catch (error) {
-      if (!this.closed) this.fail(error instanceof Error ? error.message : String(error));
+      if (this.closed) return;
+      const detail = error instanceof Error ? error.message : String(error);
+      console.error(`ai session in ${room} failed:`, detail);
+      this.fail(this.apiError ? explainApiError(this.apiError.error, this.apiError.detail) : `The assistant stopped unexpectedly (${detail}). Send again to start a new session.`);
     } finally {
       this.release();
     }
@@ -260,12 +319,27 @@ export class Session {
     if (message.type === "system" && message.subtype === "init") {
       if (!this.announced) this.send({ type: "ready", model: message.model });
       this.announced = true;
+    } else if (message.type === "system" && message.subtype === "api_retry") {
+      const what = explainApiError(message.error, message.error_status ? `the API answered ${message.error_status}` : "no answer from the API");
+      this.send({ type: "notice", message: `${what.split(". ")[0]}; retrying (${message.attempt}/${message.max_retries})…` });
+    } else if (message.type === "assistant" && message.error) {
+      const detail = message.message.content.flatMap((block) => (block.type === "text" ? [block.text] : [])).join(" ");
+      this.apiError = { error: message.error, detail };
+      console.error(`ai session in ${this.room} got ${message.error}: ${detail}`);
     } else if (message.type === "stream_event" && message.parent_tool_use_id === null) {
       const event = message.event;
       if (event.type === "content_block_delta" && event.delta.type === "text_delta") this.send({ type: "text", text: event.delta.text });
     } else if (message.type === "result") {
       const stopped = this.stopping;
       this.stopping = false;
+      const apiError = this.apiError;
+      this.apiError = undefined;
+      if (apiError && !stopped) {
+        const text = explainApiError(apiError.error, apiError.detail);
+        if (FATAL.has(apiError.error)) return this.fail(text);
+        this.send({ type: "done", cost: message.total_cost_usd, turns: message.num_turns, isError: true, message: text });
+        return;
+      }
       this.send({
         type: "done",
         cost: message.total_cost_usd,

@@ -8,13 +8,20 @@
 //   edges      id            -> { source, target, targetHandle }
 //
 // Per-client state (selection, measured size, compile status) never leaves zustand.
+//
+// The room doc is cached in IndexedDB, so a room this browser has seen opens and edits
+// with the server down, and the edits merge when it is back. A room it has never seen
+// can't be seeded offline (the seed would merge into whatever the server holds), so it is
+// edited in a scratch doc until the server answers. See `settle` and `adoptRoom`.
 import { HocuspocusProvider } from "@hocuspocus/provider";
 import type { Edge } from "@xyflow/react";
+import { IndexeddbPersistence } from "y-indexeddb";
 import type { Awareness } from "y-protocols/awareness";
 import * as Y from "yjs";
 import { create } from "zustand";
 import { engine } from "./engine/engine";
 import { decodeShaderParam, encodeShaderParam, parseShader } from "./engine/wrap";
+import { toGraphFile, type GraphFile } from "./graph-file";
 import { identity } from "./room";
 import { wireStyle, type Family } from "./family";
 import { createOpData, migrateLegacyRenders, type OpData, type Par } from "./ops/catalog";
@@ -53,28 +60,58 @@ export interface Peer {
   editing: string | null;
   agent?: boolean;
 }
+/**
+ * waiting: nothing to edit against yet (the graph still runs, edits stay in this tab).
+ * room: the graph mirrors the room doc; offline edits are cached in this browser and merge later.
+ * local: the server never answered and this browser has no copy of the room; a scratch doc.
+ */
+export type SyncMode = "waiting" | "room" | "local";
+
+/** The server came back with its own graph after this tab edited a scratch copy. */
+export interface Diverged {
+  graph: GraphFile;
+}
+
 interface SyncState {
   room: string;
   status: "offline" | "connecting" | "connected";
+  /** The server's copy has arrived on the current connection. */
   synced: boolean;
+  mode: SyncMode;
+  /** Bumped whenever the graph moves to another doc, so shader editors rebind. */
+  epoch: number;
+  diverged: Diverged | null;
   peers: Peer[];
 }
 
-export const useSync = create<SyncState>(() => ({ room: "", status: "offline", synced: false, peers: [] }));
+export const useSync = create<SyncState>(() => ({
+  room: "",
+  status: "offline",
+  synced: false,
+  mode: "waiting",
+  epoch: 0,
+  diverged: null,
+  peers: [],
+}));
 
-export const doc = new Y.Doc();
-const nodesMap = doc.getMap<NodeRec>("nodes");
-const codeMap = doc.getMap<Y.Text>("code");
-const committedMap = doc.getMap<string>("committed");
-const paramsMap = doc.getMap<ParamValue>("params");
-const edgesMap = doc.getMap<EdgeRec>("edges");
+/** The room as the server and this browser's cache know it. The provider syncs it. */
+const roomDoc = new Y.Doc();
+/** The doc the graph mirrors: the room doc, or a scratch doc in local mode. */
+let doc = roomDoc;
+let nodesMap: Y.Map<NodeRec>;
+let codeMap: Y.Map<Y.Text>;
+let committedMap: Y.Map<string>;
+let paramsMap: Y.Map<ParamValue>;
+let edgesMap: Y.Map<EdgeRec>;
 /** `loaded` changes when someone replaces the whole graph, so every client re-fits its view. */
-const metaMap = doc.getMap<string>("meta");
+let metaMap: Y.Map<string>;
 
 let provider: HocuspocusProvider | null = null;
 let ready = false;
 let applying = false;
 let pullQueued = false;
+/** Something other than the seed was written to the scratch doc. */
+let editedLocally = false;
 
 // ---------------------------------------------------------------- undo
 //
@@ -83,16 +120,42 @@ let pullQueued = false;
 // left out so a compile is never an undo step.
 
 const GESTURE_GAP = 400;
-const history = new Y.UndoManager([nodesMap, codeMap, paramsMap, edgesMap], {
-  trackedOrigins: new Set([LOCAL]),
-  captureTimeout: GESTURE_GAP,
-});
+let history: Y.UndoManager;
 
 export const useHistory = create<{ canUndo: boolean; canRedo: boolean }>(() => ({ canUndo: false, canRedo: false }));
 const readHistory = () => useHistory.setState({ canUndo: history.canUndo(), canRedo: history.canRedo() });
-history.on("stack-item-added", readHistory);
-history.on("stack-item-popped", readHistory);
-history.on("stack-cleared", readHistory);
+
+const watched = new WeakSet<Y.Doc>();
+
+/** Points the mirror (maps, undo) at another doc. Undo history does not carry over. */
+function bind(next: Y.Doc): void {
+  history?.destroy();
+  doc = next;
+  if (!watched.has(next)) {
+    watched.add(next);
+    // Someone else's edit, an undo, or a shader keystroke: bring the store up to date.
+    next.on("update", (_update: Uint8Array, origin: unknown) => {
+      if (doc === next && origin !== LOCAL && origin !== QUIET) schedulePull();
+    });
+  }
+  nodesMap = next.getMap<NodeRec>("nodes");
+  codeMap = next.getMap<Y.Text>("code");
+  committedMap = next.getMap<string>("committed");
+  paramsMap = next.getMap<ParamValue>("params");
+  edgesMap = next.getMap<EdgeRec>("edges");
+  metaMap = next.getMap<string>("meta");
+  history = new Y.UndoManager([nodesMap, codeMap, paramsMap, edgesMap], {
+    trackedOrigins: new Set([LOCAL]),
+    captureTimeout: GESTURE_GAP,
+  });
+  history.on("stack-item-added", readHistory);
+  history.on("stack-item-popped", readHistory);
+  history.on("stack-cleared", readHistory);
+  readHistory();
+  useSync.setState(({ epoch }) => ({ epoch: epoch + 1 }));
+}
+
+bind(roomDoc);
 
 export function undo(): void {
   if (ready) history.undo();
@@ -191,27 +254,51 @@ function defaultSyncUrl(): string {
   return `ws://${location.hostname}:3000`;
 }
 
+/** How long a first connection may take before this tab stops waiting and works offline. */
+const OFFLINE_AFTER = 4000;
+
+let serverSynced = false;
+let serverDown = false;
+let cacheDone = false;
+
 export function connect(room: string): void {
   if (provider) return;
   const url = import.meta.env.VITE_SYNC_URL || defaultSyncUrl();
   useSync.setState({ room, status: "connecting" });
+  try {
+    const cache = new IndexeddbPersistence(`patchwerk.room.${room}`, roomDoc);
+    void cache.whenSynced.then(() => {
+      cacheDone = true;
+      settle();
+    });
+  } catch {
+    // no IndexedDB (blocked storage): the room lives on the server only
+    cacheDone = true;
+  }
   provider = new HocuspocusProvider({
     url,
     name: room,
-    document: doc,
-    onStatus: ({ status }) => useSync.setState({ status: status === "disconnected" ? "offline" : status }),
+    document: roomDoc,
+    onStatus: ({ status }) => {
+      useSync.setState({ status: status === "disconnected" ? "offline" : status });
+      if (status !== "disconnected") return;
+      serverSynced = false;
+      serverDown = true;
+      useSync.setState({ synced: false });
+      settle();
+    },
     onSynced: () => {
-      if (ready) return;
-      if (nodesMap.size === 0) seed(useGraph.getState());
-      else {
-        // The room's graph replaces the local one; fit the view to it.
-        lastLoaded = "(before the first sync)";
-        pull();
-      }
-      ready = true;
+      serverSynced = true;
       useSync.setState({ synced: true });
+      if (useSync.getState().mode === "local") adoptRoom();
+      else settle();
     },
   });
+  window.setTimeout(() => {
+    serverDown = true;
+    cacheDone = true;
+    settle();
+  }, OFFLINE_AFTER);
   const awareness = provider.awareness;
   if (awareness) {
     const me = identity();
@@ -219,10 +306,66 @@ export function connect(room: string): void {
     awareness.on("change", () => readPeers(awareness));
     engine.onPointer = (cursor) => publishCursor(awareness, cursor);
   }
-  doc.on("update", (_update: Uint8Array, origin: unknown) => {
-    if (origin !== LOCAL && origin !== QUIET) schedulePull();
-  });
   useGraph.subscribe(push);
+}
+
+/**
+ * Until the first doc is chosen the graph runs in this tab only. The server's copy wins;
+ * without it, this browser's cached copy of the room; without that, once the server has
+ * failed to answer, a scratch doc.
+ */
+function settle(): void {
+  if (ready) return;
+  const cached = cacheDone && nodesMap.size > 0;
+  if (serverSynced || cached) {
+    if (nodesMap.size === 0) seed(useGraph.getState());
+    else {
+      // The room's graph replaces the local one; fit the view to it.
+      lastLoaded = "(before the first sync)";
+      pull();
+    }
+    ready = true;
+    useSync.setState({ mode: "room" });
+  } else if (cacheDone && serverDown) {
+    const scratch = new Y.Doc();
+    bind(scratch);
+    seed(useGraph.getState());
+    // A compile landing in `committed` is not an edit of the patch.
+    scratch.on("afterTransaction", (transaction: Y.Transaction) => {
+      if (transaction.origin === QUIET) return;
+      for (const type of transaction.changed.keys()) if (type !== (committedMap as unknown)) editedLocally = true;
+    });
+    ready = true;
+    useSync.setState({ mode: "local" });
+  }
+}
+
+/**
+ * The server answered after this tab started on a scratch doc. An empty room takes the
+ * scratch graph, edits and all. A room with its own graph wins; if this tab had changed
+ * the scratch copy, that copy is offered as a new room instead of being merged in.
+ */
+function adoptRoom(): void {
+  const scratch = doc;
+  const roomNodes = roomDoc.getMap<NodeRec>("nodes");
+  if (roomNodes.size === 0) {
+    Y.applyUpdate(roomDoc, Y.encodeStateAsUpdate(scratch), QUIET);
+    bind(roomDoc);
+  } else {
+    const { nodes, edges } = useGraph.getState();
+    const mine = editedLocally ? toGraphFile(nodes, edges) : null;
+    bind(roomDoc);
+    lastLoaded = "(adopting the room)";
+    pull();
+    if (mine) useSync.setState({ diverged: { graph: mine } });
+  }
+  scratch.destroy();
+  editedLocally = false;
+  useSync.setState({ mode: "room" });
+}
+
+export function dismissDiverged(): void {
+  useSync.setState({ diverged: null });
 }
 
 // ---------------------------------------------------------------- local -> doc

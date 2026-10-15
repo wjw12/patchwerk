@@ -19,6 +19,7 @@ export type Entry =
   | { kind: "text"; text: string }
   | ToolEntry
   | { kind: "done"; cost: number; turns: number; isError: boolean; message: string }
+  | { kind: "notice"; message: string }
   | { kind: "error"; message: string };
 
 export type Status = "idle" | "connecting" | "running" | "error";
@@ -53,6 +54,9 @@ let session = false;
 let spent = 0;
 let sessionCost = 0;
 let queue: Promise<void> = Promise.resolve();
+
+/** A server that is down behind a proxy can leave the socket hanging; give up after this. */
+const OPEN_TIMEOUT_MS = 10_000;
 
 function aiUrl(): string {
   const sync: string | undefined = import.meta.env.VITE_SYNC_URL;
@@ -105,18 +109,26 @@ function open(): Promise<WebSocket | null> {
   spent = useAssistant.getState().cost;
   sessionCost = 0;
   let opened = false;
+  const timer = window.setTimeout(() => ws.close(), OPEN_TIMEOUT_MS);
   opening = new Promise((resolve) => {
     ws.onopen = () => {
       opened = true;
+      window.clearTimeout(timer);
       resolve(ws);
     };
     ws.onclose = () => {
+      window.clearTimeout(timer);
       resolve(null);
       if (socket !== ws) return;
       socket = null;
       opening = null;
       session = false;
-      if (busy()) fail(opened ? "the connection to the assistant closed" : `could not reach the assistant at ${ws.url}`);
+      if (!busy()) return;
+      fail(
+        opened
+          ? "Lost the connection to the assistant; the server may have restarted. Send again to start a new session."
+          : `Can't reach the assistant: the server at ${new URL(ws.url).host} isn't answering. Your patch still works; try again later.`,
+      );
     };
   });
   ws.onmessage = (event) => {
@@ -132,6 +144,7 @@ function transmit(ws: WebSocket, frame: ClientFrame): void {
 function receive(ws: WebSocket, frame: ServerFrame): void {
   if (frame.type === "ready") useAssistant.setState({ model: frame.model });
   else if (frame.type === "text") stream(frame.text);
+  else if (frame.type === "notice") notice(frame.message);
   else if (frame.type === "tool_call") {
     const { id, name, input } = frame;
     queue = queue.then(() => call(ws, id, name, input));
@@ -144,6 +157,15 @@ function receive(ws: WebSocket, frame: ServerFrame): void {
     fail(frame.message);
     drop();
   }
+}
+
+/** Retries come one after another; keep only the latest. */
+function notice(message: string): void {
+  useAssistant.setState(({ transcript }) => {
+    const last = transcript[transcript.length - 1];
+    const kept = last?.kind === "notice" ? transcript.slice(0, -1) : transcript;
+    return { transcript: [...kept, { kind: "notice", message }] };
+  });
 }
 
 function stream(text: string): void {
